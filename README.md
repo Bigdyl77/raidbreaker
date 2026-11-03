@@ -8,6 +8,15 @@ npm run dev    # same, plus the Dev panel (exposes the active server seed)
 npm test
 ```
 
+## Sharing it (static build)
+
+`node build-static.js` writes a server-free copy to `dist/`: the game runs in the browser and saves each player's balance in their own browser, so it can go on any static host.
+
+- **GitHub Pages**: `.github/workflows/pages.yml` publishes `dist/` on every push to `main` once Pages is on (Settings → Pages → Source: GitHub Actions). The link is `https://<user>.github.io/raidbreaker/`. Free accounts need the repo to be public.
+- **Netlify / itch.io**: run the build and upload the `dist/` folder (itch.io: zip it and mark it "played in the browser").
+
+In the static build the server seed lives in the player's browser, so it's a play-money demo, not a provably fair one. The Node server keeps the seed secret.
+
 ## The game
 
 - 5 reels × 4 rows, ways pays from the left. Raid Banner wilds land on reels 2–4, and Boss Gate scatters can land on any reel.
@@ -31,7 +40,9 @@ Before a round, the server shows `SHA-256(serverSeed)`. Each round draws floats 
 | `shared/fair.js` | SHA-256, HMAC and the float streams (pure JS, runs in Node and in the browser) |
 | `shared/game.js` | The engine: symbols, modes, tiers, gear, buys and the gamble |
 | `shared/sim.js` | Fast simulator for balancing |
-| `server.js` | HTTP server and game state (single player, in memory) |
+| `shared/house.js` | Game state and request handlers, shared by the server and the static build |
+| `server.js` | HTTP server around `shared/house.js` (single player, in memory) |
+| `public/local.js`, `build-static.js` | The static build: runs `shared/house.js` in the page and saves to localStorage |
 | `public/` | The browser client |
 | `rtp.js` | Parallel RTP check: `node rtp.js 100000000 mega` |
 | `calibrate.js` | Measures tier values and clear rates. Paste its output into each mode's `calibration` / `clearRate` |
