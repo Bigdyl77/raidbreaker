@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "raidbreaker-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js", "--dev"],
+      "port": 3000
+    }
+  ]
+}

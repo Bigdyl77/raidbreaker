@@ -318,3 +318,6 @@ th { color: var(--muted); font-weight: 600; }
   .controls .spin { flex: 1; }
   .gear-slot { font-size: 9px; }
 }
+.pip.secret { border-style: dashed; color: #ffe08a; }
+.win-line small { font-size: 0.7em; color: var(--muted); font-weight: 400; }
+.banner { z-index: 6; pointer-events: none; }
