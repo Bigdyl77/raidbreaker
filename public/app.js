@@ -385,13 +385,11 @@ function decide(resp) {
     const overlay = $('decision');
     const card = overlay.firstElementChild;
     let current = resp;
-    let hero = resp.round.bonus.hero || S.hero;
     const draw = () => {
       const round = current.round;
       const tier = round.bonus.tier;
-      const locked = !!round.bonus.glory;
-      renderHeroPick($('hero-pick'), hero, { tier, locked });
-      $('hero-desc').innerHTML = heroDesc(hero) + (locked ? ' <em>Locked: Glory or Wipe was priced for this class.</em>' : '');
+      const hero = round.bonus.hero || S.hero;
+      $('decision-hero').innerHTML = `Raiding as ${heroDesc(hero)} Clears ${pct(Game.MODES[round.mode].clearRate[hero][tier], 1)} of ${esc(Game.TIERS[tier].name)} raids.`;
       $('decision-title').textContent = Game.TIERS[tier].name + '!';
       const ascended = round.bonus.tier > round.bonus.triggeredTier && !round.gambles.length;
       $('decision-sub').textContent = sourceText(round.bonus, round) + (ascended ? ` Ascended from ${Game.TIERS[round.bonus.triggeredTier].name}!` : '');
@@ -425,24 +423,15 @@ function decide(resp) {
     };
     const onPlay = async () => {
       setButtons(true);
-      try { done(await api('/api/bonus/play', { hero })); } catch (e) { fail(e); } finally { setButtons(false); }
-    };
-    const onPick = (e) => {
-      const btn = e.target.closest('[data-hero]');
-      if (!btn || btn.disabled) return;
-      hero = btn.dataset.hero;
-      prefs.set('hero', hero);
-      draw();
+      try { done(await api('/api/bonus/play', {})); } catch (e) { fail(e); } finally { setButtons(false); }
     };
     const setButtons = (disabled) => { $('gamble').disabled = disabled; $('play-bonus').disabled = disabled; };
     const cleanup = () => {
       $('gamble').removeEventListener('click', onGamble);
       $('play-bonus').removeEventListener('click', onPlay);
-      $('hero-pick').removeEventListener('click', onPick);
     };
     $('gamble').addEventListener('click', onGamble);
     $('play-bonus').addEventListener('click', onPlay);
-    $('hero-pick').addEventListener('click', onPick);
     draw();
     overlay.classList.remove('hidden');
   });
@@ -535,7 +524,7 @@ function spin() {
 function buy(buyId) {
   return run(async () => {
     const bet = S.bets[betIndex];
-    const resp = await api('/api/buy', { bet, buy: buyId, hero: S.hero });
+    const resp = await api('/api/buy', { bet, buy: buyId });
     S = resp.state;
     render();
     clearMarks();
@@ -555,8 +544,9 @@ function buy(buyId) {
 function updateControls() {
   const pending = !!(S && S.pending);
   const bet = S ? S.bets[betIndex] : 0;
-  $('spin').disabled = busy || pending || !S || S.balance < bet;
-  $('buy-open').disabled = busy || pending || !S;
+  $('spin').disabled = busy || pending || !S || S.balance < bet || !heroChosen;
+  $('buy-open').disabled = busy || pending || !S || !heroChosen;
+  document.querySelectorAll('#heroes button').forEach((b) => { b.disabled = busy || pending; });
   $('bet-down').disabled = busy || betIndex === 0;
   $('bet-up').disabled = busy || !S || betIndex === S.bets.length - 1;
   document.querySelectorAll('#modes button').forEach((b) => { b.disabled = busy || pending; });
@@ -592,7 +582,6 @@ function buyBlurb(b, mode) {
 }
 function renderBuyList() {
   const bet = S.bets[betIndex];
-  renderHeroPick($('buy-heroes'), S.hero);
   $('buy-list').innerHTML = Game.BUYS.map((b) => {
     const priceX = Game.buyPrice(S.mode, b.id, S.hero);
     const cost = Math.round(priceX * bet * 100) / 100;
@@ -605,10 +594,49 @@ $('buy-open').addEventListener('click', () => {
   renderBuyList();
   buyModal.classList.remove('hidden');
 });
-$('buy-heroes').addEventListener('click', async (e) => {
+
+/* ---------- Class (profile) ---------- */
+
+// The class is chosen before the first spin and kept as the player's profile.
+let heroChosen = prefs.get('heroChosen', false);
+
+async function chooseHero(id) {
+  if (id !== S.hero) S = await api('/api/hero', { hero: id });
+  prefs.set('hero', S.hero);
+  render();
+}
+
+$('heroes').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-hero]');
-  if (!btn || btn.dataset.hero === S.hero) return;
-  try { S = await api('/api/hero', { hero: btn.dataset.hero }); prefs.set('hero', S.hero); renderBuyList(); render(); } catch (err) { setText(esc(err.message)); }
+  if (!btn || btn.disabled || btn.dataset.hero === S.hero) return;
+  try { await chooseHero(btn.dataset.hero); } catch (err) { setText(esc(err.message)); }
+});
+
+const classModal = $('class-modal');
+let modalPick = null;
+function drawClassModal() {
+  renderHeroPick($('class-modal-pick'), modalPick);
+  $('class-modal-desc').innerHTML = heroDesc(modalPick);
+}
+function openClassModal() {
+  modalPick = S.hero;
+  drawClassModal();
+  classModal.classList.remove('hidden');
+}
+$('class-modal-pick').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-hero]');
+  if (!btn) return;
+  modalPick = btn.dataset.hero;
+  drawClassModal();
+});
+$('class-confirm').addEventListener('click', async () => {
+  try {
+    await chooseHero(modalPick);
+    heroChosen = true;
+    prefs.set('heroChosen', true);
+    classModal.classList.add('hidden');
+    updateControls();
+  } catch (err) { setText(esc(err.message)); }
 });
 $('buy-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-buy]');
@@ -820,6 +848,10 @@ function render() {
   $('nonce').textContent = S.nonce;
   document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === S.mode));
   $('mode-blurb').textContent = Game.MODES[S.mode].blurb;
+  const hero = heroById(S.hero);
+  renderHeroPick($('heroes'), S.hero);
+  $('class-name').textContent = `${hero.icon} ${hero.name}`;
+  $('class-ability').textContent = hero.ability;
   $('dev-tab').classList.toggle('hidden', !S.dev);
   renderGear(S.progress);
   renderHistory();
@@ -857,4 +889,5 @@ async function refresh() {
       showResult(final.round);
     });
   }
+  if (!heroChosen) openClassModal();
 })();

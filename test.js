@@ -111,13 +111,15 @@ for (const [modeId, mode] of Object.entries(Game.MODES)) {
   let checked = 0;
   for (let i = 0; i < 4000 && checked < 20; i++) {
     const a = createHouse({ newSeed });
+    a.handlerFor('POST /api/hero')({ body: { hero: Game.HEROES[i % Game.HEROES.length].id } });
     for (let spin = 0; spin < 400; spin++) {
       const r = a.handlerFor('POST /api/spin')({ body: { bet: 1 } });
       if (r.done) continue;
       try { a.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ }
       if (!a.state.pending) break;
       const b = createHouse({ newSeed, saved: JSON.parse(JSON.stringify(a.snapshot())) });
-      const play = (h) => { try { h.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ } return h.state.pending ? h.handlerFor('POST /api/bonus/play')({ body: { hero: Game.HEROES[checked % Game.HEROES.length].id } }) : null; };
+      const play = (h) => { try { h.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ } return h.state.pending ? h.handlerFor('POST /api/bonus/play')({}) : null; };
+      assert.throws(() => a.handlerFor('POST /api/hero')({ body: { hero: 'mage' } }), /Finish the current bonus/, 'class is locked during a round');
       assert.deepStrictEqual(play(b), play(a), 'restored pending round finishes identically');
       assert.deepStrictEqual(b.snapshot(), a.snapshot(), 'restored house state matches');
       checked++;
