@@ -10,8 +10,9 @@
   <div class="app">
     <main class="stage">
       <header class="title">
-        <h1>Raidbreaker</h1>
+        <h1>RAIDBREAKER</h1>
         <div id="modes" class="modes" role="radiogroup" aria-label="Volatility"></div>
+        <button id="sound-toggle" class="icon-btn" type="button" title="Toggle sound effects" aria-label="Toggle sound effects">🔊 Sound</button>
       </header>
       <p id="mode-blurb" class="hint mode-blurb"></p>
 
@@ -19,13 +20,29 @@
         <div class="class-head">
           <span>Class <b id="class-name"></b></span>
           <span id="class-ability" class="hint"></span>
+          <div class="stage-tools">
+            <div class="style-picker" role="group" aria-label="Art Style">
+              <button type="button" class="style-btn active" data-style="gothic" title="Chiseled Gothic Dark-Fantasy Art">🗡️ Gothic</button>
+              <button type="button" class="style-btn" data-style="pixel" title="16-Bit Retro Pixel Dungeon Art">👾 16-Bit Pixel</button>
+              <button type="button" class="style-btn" data-style="compact" title="Hide stage canvas">📐 Compact</button>
+            </div>
+            <div class="emote-bar" role="group" aria-label="Character Actions">
+              <button type="button" id="act-attack" class="emote-btn" title="Trigger weapon attack">⚡ Strike</button>
+              <button type="button" id="act-taunt" class="emote-btn" title="Battle cry taunt">📯 War Cry</button>
+              <button type="button" id="act-flex" class="emote-btn" title="Inspect equipped gear">🛡️ Flex Gear</button>
+            </div>
+          </div>
         </div>
         <div id="heroes" class="hero-pick compact" role="radiogroup" aria-label="Class"></div>
+        <div id="arena-canvas-wrap" class="arena-canvas-wrap">
+          <canvas id="arena-canvas" width="880" height="210"></canvas>
+          <div class="arena-hint">Click your Champion or the Boss Gate to interact · 6/6 Gear equips visibly onto your Champion</div>
+        </div>
       </section>
 
       <section class="gear-bar" aria-label="Gear">
         <div class="gear-head">
-          <span>Gear <b id="gear-count">0/6</b></span>
+          <span>Gear <b id="gear-count">0/6</b> <small class="gear-sub">(Click any piece to preview on Champion)</small></span>
           <span class="hint">Full set = Normal Bonus · drop chance <b id="loot-chance">1.0%</b></span>
         </div>
         <div id="gear-slots" class="gear-slots"></div>
@@ -33,14 +50,14 @@
 
       <section id="raid-bar" class="raid-bar hidden" aria-live="polite">
         <div class="raid-top">
-          <span><span id="raid-hero" class="hero-chip"></span> <span id="raid-tier" class="tier-chip"></span> <span id="boss-name" class="boss-name"></span></span>
+          <span class="raid-boss-head"><span id="raid-hero" class="hero-chip"></span> <span id="raid-tier" class="tier-chip"></span> <span id="boss-portrait" class="boss-portrait"></span> <span id="boss-name" class="boss-name"></span></span>
           <span class="raid-stats">
             <span>Multiplier <b id="raid-mult">x1</b></span>
             <span>Next kill <b id="raid-next">x2</b></span>
             <span id="raid-charge" class="hidden">Charge <b id="raid-charge-val">0/4</b></span>
             <span>Spins <b id="raid-spins">0</b></span>
             <span>Win <b id="raid-win">0.00</b></span>
-            <button id="skip-bonus" class="small-btn">Skip bonus ⏭</button>
+            <button id="skip-bonus" class="small-btn" type="button">Skip bonus ⏭</button>
           </span>
         </div>
         <div id="hp-track" class="hp-track"><div id="hp-lag" class="hp-lag"></div><div id="hp-fill" class="hp-fill"></div><span id="hp-text" class="hp-text"></span><span id="hp-pop" class="hp-pop"></span></div>
@@ -58,8 +75,8 @@
             <ol id="tier-ladder" class="tier-ladder"></ol>
             <p id="decision-hero" class="hint hero-desc"></p>
             <div class="overlay-actions">
-              <button id="gamble" class="gamble-btn"></button>
-              <button id="play-bonus" class="play-btn">Enter raid</button>
+              <button id="gamble" class="gamble-btn" type="button"></button>
+              <button id="play-bonus" class="play-btn" type="button">Enter raid</button>
             </div>
             <p class="hint small">Gamble wins move you up one tier. A loss forfeits the bonus. Odds are fair: gambling doesn't change your expected return.</p>
           </div>
@@ -73,9 +90,9 @@
         <div class="bet">
           <label>Bet</label>
           <div class="bet-row">
-            <button id="bet-down" class="small" aria-label="Lower bet">−</button>
+            <button id="bet-down" class="small" type="button" aria-label="Lower bet">−</button>
             <b id="bet">1.00</b>
-            <button id="bet-up" class="small" aria-label="Raise bet">+</button>
+            <button id="bet-up" class="small" type="button" aria-label="Raise bet">+</button>
           </div>
         </div>
         <div class="speed">
@@ -86,19 +103,32 @@
             <option value="super">Super Turbo</option>
           </select>
         </div>
-        <button id="buy-open" class="buy-btn">Buy bonus</button>
-        <button id="spin" class="spin">SPIN</button>
-        <button id="reset-balance" class="link">Reset balance</button>
+        <div class="auto-wrap">
+          <label for="auto-select">Auto</label>
+          <div class="auto-row">
+            <select id="auto-select" aria-label="Autoplay spins">
+              <option value="0">Off</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <button id="auto-btn" class="auto-btn" type="button">Auto</button>
+          </div>
+        </div>
+        <button id="buy-open" class="buy-btn" type="button">Buy bonus</button>
+        <button id="spin" class="spin" type="button">SPIN</button>
+        <button id="reset-balance" class="link" type="button">Reset balance</button>
       </footer>
     </main>
 
     <aside class="panel">
       <nav class="tabs" role="tablist">
-        <button data-tab="fair" class="active">Fairness</button>
-        <button data-tab="verify">Verify</button>
-        <button data-tab="history">History</button>
-        <button data-tab="pays">Paytable</button>
-        <button data-tab="dev" id="dev-tab" class="hidden">Dev</button>
+        <button data-tab="fair" class="active" type="button">Fairness</button>
+        <button data-tab="verify" type="button">Verify</button>
+        <button data-tab="history" type="button">History</button>
+        <button data-tab="pays" type="button">Paytable</button>
+        <button data-tab="dev" id="dev-tab" class="hidden" type="button">Dev</button>
       </nav>
 
       <section data-panel="fair" class="tab-panel">
@@ -108,11 +138,11 @@
         <label for="client-seed">Client seed</label>
         <div class="row">
           <input id="client-seed" maxlength="64" spellcheck="false">
-          <button id="save-client-seed">Change</button>
+          <button id="save-client-seed" type="button">Change</button>
         </div>
         <label>Next nonce</label>
         <code id="nonce" class="mono"></code>
-        <button id="rotate" class="wide">Rotate seed &amp; reveal</button>
+        <button id="rotate" class="wide" type="button">Rotate seed &amp; reveal</button>
         <h3>Revealed seeds</h3>
         <div id="revealed" class="list"><p class="hint">None yet.</p></div>
       </section>
@@ -137,7 +167,7 @@
           <div><label for="v-gear">Gear before (0-63)</label><input id="v-gear" type="number" min="0" max="63" value="0"></div>
           <div><label for="v-dry">Dry spins</label><input id="v-dry" type="number" min="0" value="0"></div>
         </div>
-        <button id="v-run" class="wide">Verify</button>
+        <button id="v-run" class="wide" type="button">Verify</button>
         <div id="v-out"></div>
       </section>
 
@@ -156,10 +186,10 @@
         <label for="dev-seed-input">Set a fixed server seed</label>
         <div class="row">
           <input id="dev-seed-input" spellcheck="false" placeholder="e.g. test-seed-1">
-          <button id="dev-set-seed">Set</button>
+          <button id="dev-set-seed" type="button">Set</button>
         </div>
         <h3>Upcoming spins (this mode, no gambles)</h3>
-        <button id="dev-preview">Preview next 50</button>
+        <button id="dev-preview" type="button">Preview next 50</button>
         <div id="dev-preview-out" class="list"></div>
         <h3>Simulation (this mode)</h3>
         <div class="row">
@@ -169,7 +199,7 @@
             <option value="1000000" selected>1M spins</option>
             <option value="2000000">2M spins</option>
           </select>
-          <button id="dev-sim">Run</button>
+          <button id="dev-sim" type="button">Run</button>
         </div>
         <div id="dev-sim-out"></div>
       </section>
@@ -181,7 +211,7 @@
       <h2 id="buy-title">Buy a bonus</h2>
       <p class="hint">Prices are multiples of your bet. Any bonus can ascend when it starts, which is the only way to find the Super Hidden Bonus besides the gamble.</p>
       <div id="buy-list" class="buy-list"></div>
-      <button id="buy-close" class="wide">Cancel</button>
+      <button id="buy-close" class="wide" type="button">Cancel</button>
     </div>
   </div>
 
@@ -191,7 +221,7 @@
       <p class="hint">Your class changes how every raid plays. All classes have the same average win. You can switch any time between spins from the class bar.</p>
       <div id="class-modal-pick" class="hero-pick" role="radiogroup" aria-label="Class"></div>
       <p id="class-modal-desc" class="hint hero-desc"></p>
-      <button id="class-confirm" class="play-btn wide">Start raiding</button>
+      <button id="class-confirm" class="play-btn wide" type="button">Start raiding</button>
     </div>
   </div>
 
@@ -201,8 +231,8 @@
       <p class="hint">Jumps straight to the result. Your win is the same, it's already decided.</p>
       <label class="check"><input type="checkbox" id="skip-dont-ask"> Don't ask again</label>
       <div class="overlay-actions">
-        <button id="skip-cancel">Keep watching</button>
-        <button id="skip-confirm" class="play-btn">Skip</button>
+        <button id="skip-cancel" type="button">Keep watching</button>
+        <button id="skip-confirm" class="play-btn" type="button">Skip</button>
       </div>
     </div>
   </div>
