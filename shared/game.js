@@ -88,16 +88,68 @@
     return out;
   };
 
+  // Classes. The player picks one before each raid. Each changes how the raid
+  // plays, and each mode's `heroScale` evens out the raid pays per class and
+  // tier, so every class has the same average win (gamble odds and buy prices
+  // don't depend on the pick). Clear rates differ a little, so Glory or Wipe
+  // is priced per class. Every ability scales with damage dealt, so a class
+  // keeps its edge in every tier. Abilities:
+  //   spins       extra (or fewer) starting raid spins
+  //   crit        each wild hit has `chance` to deal `dmg` instead of 1
+  //   multBoost   boss-kill multipliers are multiplied by this (rounded up)
+  //   charge      every `every`th raid spin, wild hits deal `factor`x damage
+  //   markReel    wild hits on this reel (0-based) deal `markDmg`
+  //   killSpins   extra spins per boss kill
+  //   rez         once per raid, when spins run out with the boss at or below
+  //               `threshold` of its HP, add `spins`
+  const HEROES = [
+    {
+      id: 'warrior', name: 'Warrior', icon: '🛡️', style: 'Steady',
+      ability: 'Shield Wall: starts every raid with 4 extra spins.',
+      spins: 4,
+    },
+    {
+      id: 'rogue', name: 'Rogue', icon: '🗡️', style: 'Swingy',
+      ability: 'Backstab: every wild hit has a 15% chance to crit for 3 damage. 1 fewer raid spin.',
+      spins: -1, crit: { chance: 0.15, dmg: 3 },
+    },
+    {
+      id: 'mage', name: 'Mage', icon: '🔮', style: 'Big multipliers',
+      ability: 'Arcane Surge: boss kills give 1.5x the multiplier. Arcane Charge: every 4th spin, wild hits deal double damage.',
+      spins: 0, multBoost: 1.5, charge: { every: 4, factor: 2 },
+    },
+    {
+      id: 'hunter', name: 'Hunter', icon: '🏹', style: 'Marksman',
+      ability: "Hunter's Mark: wilds on the middle reel hit for 2 damage. 1 fewer raid spin.",
+      spins: -1, markReel: 2, markDmg: 2,
+    },
+    {
+      id: 'priest', name: 'Priest', icon: '✨', style: 'Second chances',
+      ability: 'Resurrection: once per raid, if spins run out with the boss at 40% HP or less, +3 spins. Blessing: +1 spin per boss kill.',
+      spins: 0, killSpins: 1, rez: { threshold: 0.4, spins: 3 },
+    },
+  ];
+  const DEFAULT_HERO = 'warrior';
+  function getHero(id) {
+    const hero = HEROES.find((h) => h.id === id);
+    if (!hero) throw new Error(`Unknown class: ${id}`);
+    return hero;
+  }
+
   const BOSS_NAMES = ['Gravelord Okk', 'Sister Venn', 'The Ashen Wyrm', 'The Hollow King'];
   const bosses = (list) => list.map(([hp, reward], i) => ({ name: BOSS_NAMES[i], hp, reward }));
 
   // Volatility modes. Same symbols and features, different math.
   // tiers[i]: spins, startBoss (bosses already beaten), wildBoost (extra
-  // wilds per middle reel strip). Super Hidden adds the secret boss.
-  // calibration: measured mean raid win per tier (x bet), used for fair
-  // gamble odds and buy prices. clearRate: measured chance each tier beats
-  // every boss, used to price Glory or Wipe. Re-measure both with
-  // `node calibrate.js` after changing a mode's math.
+  // wilds per middle reel strip), sticky (spins a raid wild stays on the reels
+  // after landing, hitting the boss again each spin) and hpMult (boss HP
+  // multiplier, tuned so every tier clears roughly 2-16% of the time).
+  // Super Hidden adds the secret boss.
+  // calibration: target mean raid win per tier (x bet), used for fair gamble
+  // odds and buy prices. heroScale: raid pay scale per class and tier that
+  // makes every class average the target. clearRate: measured chance each
+  // class beats every boss per tier, used to price Glory or Wipe. Re-measure
+  // both with `node calibrate.js` after changing a mode's raid math.
   const MODES = {
     steady: {
       label: 'Steady',
@@ -113,14 +165,27 @@
       bosses: bosses([[4, 2], [6, 2], [8, 3], [10, 4]]),
       secretBoss: { name: 'The Unseen', hp: 12, reward: 8 },
       tiers: [
-        { spins: 6, startBoss: 0, wildBoost: 0 },
-        { spins: 8, startBoss: 1, wildBoost: 0 },
-        { spins: 10, startBoss: 2, wildBoost: 1 },
-        { spins: 12, startBoss: 3, wildBoost: 2 },
+        { spins: 6, startBoss: 0, wildBoost: 0, sticky: 0, hpMult: 0.87 },
+        { spins: 8, startBoss: 1, wildBoost: 0, sticky: 1, hpMult: 1.69 },
+        { spins: 10, startBoss: 2, wildBoost: 1, sticky: 2, hpMult: 3.44 },
+        { spins: 12, startBoss: 3, wildBoost: 2, sticky: 3, hpMult: 3.95 },
       ],
       loot: { base: 0.015, perDrySpin: 0.00008, max: 0.06 },
       calibration: [16.15, 27.07, 53.09, 114.71],
-      clearRate: [0.000004667, 0.001318, 0.3766, 0.5532],
+      heroScale: {
+        warrior: [0.467, 0.2478, 0.1702, 0.1209],
+        rogue: [0.9411, 0.4387, 0.2816, 0.1837],
+        mage: [0.5652, 0.2487, 0.1584, 0.1047],
+        hunter: [0.9299, 0.4319, 0.2782, 0.1816],
+        priest: [0.464, 0.2639, 0.1991, 0.1373],
+      },
+      clearRate: {
+        warrior: [0.03599, 0.08537, 0.1501, 0.197],
+        rogue: [0.01849, 0.03227, 0.05866, 0.09506],
+        mage: [0.01171, 0.02881, 0.0661, 0.121],
+        hunter: [0.01784, 0.04083, 0.062, 0.1172],
+        priest: [0.08094, 0.09766, 0.1216, 0.1796],
+      },
     },
     standard: {
       label: 'Standard',
@@ -136,14 +201,27 @@
       bosses: bosses([[5, 2], [8, 3], [12, 5], [16, 10]]),
       secretBoss: { name: 'The Unseen', hp: 18, reward: 25 },
       tiers: [
-        { spins: 8, startBoss: 0, wildBoost: 0 },
-        { spins: 10, startBoss: 1, wildBoost: 0 },
-        { spins: 12, startBoss: 2, wildBoost: 2 },
-        { spins: 14, startBoss: 3, wildBoost: 3 },
+        { spins: 8, startBoss: 0, wildBoost: 0, sticky: 0, hpMult: 1.19 },
+        { spins: 10, startBoss: 1, wildBoost: 0, sticky: 1, hpMult: 2.06 },
+        { spins: 12, startBoss: 2, wildBoost: 2, sticky: 2, hpMult: 3.66 },
+        { spins: 14, startBoss: 3, wildBoost: 3, sticky: 3, hpMult: 4.03 },
       ],
       loot: { base: 0.01, perDrySpin: 0.00005, max: 0.05 },
       calibration: [65.23, 94.25, 258.19, 746.39],
-      clearRate: [0.01061, 0.05312, 0.8077, 0.8345],
+      heroScale: {
+        warrior: [0.6902, 0.2741, 0.2341, 0.1906],
+        rogue: [1.097, 0.4163, 0.3389, 0.2592],
+        mage: [0.6502, 0.2337, 0.191, 0.1537],
+        hunter: [1.063, 0.4052, 0.333, 0.2531],
+        priest: [0.644, 0.2765, 0.272, 0.216],
+      },
+      clearRate: {
+        warrior: [0.01486, 0.05847, 0.115, 0.1351],
+        rogue: [0.02344, 0.05419, 0.08345, 0.1275],
+        mage: [0.01872, 0.05483, 0.09442, 0.1536],
+        hunter: [0.02477, 0.06439, 0.09838, 0.1488],
+        priest: [0.04412, 0.09195, 0.1061, 0.129],
+      },
     },
     mega: {
       label: 'Mega',
@@ -165,14 +243,27 @@
       bosses: bosses([[6, 3], [10, 10], [14, 25], [15, 100]]),
       secretBoss: { name: 'The Unseen', hp: 20, reward: 500 },
       tiers: [
-        { spins: 10, startBoss: 0, wildBoost: 0 },
-        { spins: 12, startBoss: 1, wildBoost: 0 },
-        { spins: 14, startBoss: 2, wildBoost: 2 },
-        { spins: 16, startBoss: 3, wildBoost: 3 },
+        { spins: 10, startBoss: 0, wildBoost: 0, sticky: 0, hpMult: 1.18 },
+        { spins: 12, startBoss: 1, wildBoost: 0, sticky: 1, hpMult: 2.15 },
+        { spins: 14, startBoss: 2, wildBoost: 2, sticky: 2, hpMult: 3.97 },
+        { spins: 16, startBoss: 3, wildBoost: 3, sticky: 3, hpMult: 4.37 },
       ],
       loot: { base: 0.006, perDrySpin: 0.00004, max: 0.04 },
       calibration: [146.57, 286.99, 1642.97, 10192.74],
-      clearRate: [0.01294, 0.07845, 0.9376, 0.9414],
+      heroScale: {
+        warrior: [0.7033, 0.3189, 0.4173, 0.3482],
+        rogue: [0.9858, 0.4432, 0.5625, 0.4268],
+        mage: [0.6173, 0.2712, 0.346, 0.2604],
+        hunter: [0.9328, 0.4185, 0.5442, 0.4079],
+        priest: [0.6121, 0.3116, 0.4832, 0.3925],
+      },
+      clearRate: {
+        warrior: [0.01317, 0.03751, 0.091, 0.1078],
+        rogue: [0.02898, 0.05332, 0.0958, 0.1423],
+        mage: [0.02285, 0.04896, 0.1006, 0.1641],
+        hunter: [0.03183, 0.06491, 0.1136, 0.1693],
+        priest: [0.03784, 0.05737, 0.08476, 0.1049],
+      },
     },
   };
   const DEFAULT_MODE = 'standard';
@@ -246,12 +337,14 @@
     return value;
   }
 
-  // Buy price in multiples of the bet.
-  function buyPrice(modeId, buyId) {
+  // Buy price in multiples of the bet. Every class has the same average raid
+  // win, so only Glory or Wipe (priced on clear rates) depends on the class.
+  function buyPrice(modeId, buyId, heroId = DEFAULT_HERO) {
     const mode = getMode(modeId);
     const buy = BUYS.find((b) => b.id === buyId);
     if (!buy) throw new Error(`Unknown buy: ${buyId}`);
-    const perTier = buy.glory ? mode.clearRate.map((p) => p * mode.maxWinX) : mode.calibration;
+    getHero(heroId);
+    const perTier = buy.glory ? mode.clearRate[heroId].map((p) => p * mode.maxWinX) : mode.calibration;
     const value = buy.tier === null
       ? buy.weights.reduce((v, w, t) => v + w * startValue(t, perTier), 0)
       : startValue(buy.tier, perTier);
@@ -299,49 +392,103 @@
     return { wins, waysX, scatterCells, wildCells };
   }
 
-  function raidBosses(mode, tier) {
-    return tier === TOP_TIER ? mode.bosses.concat([mode.secretBoss]) : mode.bosses;
+  // The bosses of a raid at `tier`, with that tier's HP multiplier and the
+  // class's multiplier boost applied. Super Hidden adds the secret boss.
+  function raidBosses(mode, tier, heroId = DEFAULT_HERO) {
+    const hero = getHero(heroId);
+    const hpMult = mode.tiers[tier].hpMult || 1;
+    const base = tier === TOP_TIER ? mode.bosses.concat([mode.secretBoss]) : mode.bosses;
+    return base.map((b) => ({
+      name: b.name,
+      hp: Math.max(1, Math.round(b.hp * hpMult)),
+      reward: hero.multBoost ? Math.ceil(b.reward * hero.multBoost) : b.reward,
+    }));
   }
 
+  // Raid pay scale for a class at a tier (1 when uncalibrated).
+  const heroScaleFor = (mode, tier, heroId) => (mode.heroScale ? mode.heroScale[heroId][tier] : 1);
+
   // glory: Glory or Wipe rules (only clearing every boss pays, at max win).
-  function runRaid(rng, mode, tier, startX, glory = false) {
+  // Wilds deal 1 damage each. In tiers with `sticky`, a wild that lands stays
+  // on the reels for that many more spins and hits the boss again each spin.
+  function runRaid(rng, mode, tier, startX, glory = false, heroId = DEFAULT_HERO) {
+    const hero = getHero(heroId);
     const cfg = mode.tiers[tier];
-    const list = raidBosses(mode, tier);
+    const list = raidBosses(mode, tier, heroId);
     const strips = mode.strips.free[cfg.wildBoost];
+    const stickyFor = cfg.sticky || 0;
+    const winScale = heroScaleFor(mode, tier, heroId);
+    const killSpins = mode.bossKillSpins + (hero.killSpins || 0);
     const steps = [];
-    let spinsLeft = cfg.spins;
+    const startSpins = Math.max(3, cfg.spins + (hero.spins || 0));
+    let spinsLeft = startSpins;
     let bossIndex = cfg.startBoss;
     let hp = list[bossIndex].hp;
     let mult = bossIndex > 0 ? list[bossIndex - 1].reward : 1;
     const startMult = mult;
     let totalX = 0;
     let played = 0;
+    let rezUsed = false;
+    // cell index (reel * ROWS + row) -> spins the sticky wild has left
+    const sticky = new Map();
     while (spinsLeft > 0 && played < MAX_FREE_SPINS) {
       spinsLeft--;
       played++;
       const grid = spinGrid(rng, strips);
+      const stickyCells = [];
+      for (const k of sticky.keys()) {
+        const cell = [Math.floor(k / ROWS), k % ROWS];
+        grid[cell[0]][cell[1]] = 'W';
+        stickyCells.push(cell);
+      }
       const ev = evaluate(grid, mode);
+      const newWilds = ev.wildCells.filter(([r, row]) => !sticky.has(r * ROWS + row));
       const multUsed = mult;
-      let winX = ev.waysX * multUsed;
+      let winX = ev.waysX * multUsed * winScale;
       const events = [];
 
       if (ev.scatterCells.length >= 2) {
         spinsLeft += mode.retrigger;
         events.push({ type: 'retrigger', spins: mode.retrigger });
       }
-      // Every wild that lands deals 1 damage. Killing a boss sets the
-      // multiplier to its reward for all following spins; overflow carries.
-      const damage = ev.wildCells.length;
+
+      // Damage: sticky wilds hit again, new wilds hit (and may crit), then class bonuses.
+      const hits = stickyCells.map((cell) => ({ cell, sticky: true })).concat(newWilds.map((cell) => ({ cell, sticky: false })));
+      const charged = !!hero.charge && played % hero.charge.every === 0;
+      if (charged && hits.length) events.push({ type: 'charge', factor: hero.charge.factor });
+      for (const h of hits) {
+        h.dmg = 1;
+        if (hero.markReel !== undefined && h.cell[0] === hero.markReel) { h.dmg = hero.markDmg; h.marked = true; }
+        if (hero.crit && rng.next() < hero.crit.chance) { h.dmg = hero.crit.dmg; h.crit = true; }
+        if (charged) h.dmg *= hero.charge.factor;
+      }
+      const damage = hits.reduce((n, h) => n + h.dmg, 0);
+
+      // Sticky wilds count down; new wilds become sticky.
+      for (const [k, left] of sticky) {
+        if (left <= 1) sticky.delete(k);
+        else sticky.set(k, left - 1);
+      }
+      if (stickyFor) newWilds.forEach(([r, row]) => sticky.set(r * ROWS + row, stickyFor));
+
+      // Killing a boss sets the multiplier to its reward for all following
+      // spins; overflow damage carries to the next boss.
       if (bossIndex < list.length && damage > 0) {
         hp -= damage;
         while (bossIndex < list.length && hp <= 0) {
           mult = list[bossIndex].reward;
-          spinsLeft += mode.bossKillSpins;
-          events.push({ type: 'bossKilled', boss: bossIndex, mult, spins: mode.bossKillSpins });
+          spinsLeft += killSpins;
+          events.push({ type: 'bossKilled', boss: bossIndex, mult, spins: killSpins });
           bossIndex++;
           if (bossIndex < list.length) hp += list[bossIndex].hp;
           else hp = 0;
         }
+      }
+
+      if (hero.rez && !rezUsed && spinsLeft === 0 && bossIndex < list.length && hp <= list[bossIndex].hp * hero.rez.threshold) {
+        rezUsed = true;
+        spinsLeft += hero.rez.spins;
+        events.push({ type: 'resurrect', spins: hero.rez.spins });
       }
 
       if (glory) {
@@ -356,13 +503,13 @@
       }
       totalX += winX;
       steps.push({
-        grid, wins: ev.wins, scatterCells: ev.scatterCells, wildCells: ev.wildCells,
-        winX, multUsed, damage, bossIndex, hp, mult, spinsLeft, events,
+        grid, wins: ev.wins, scatterCells: ev.scatterCells, wildCells: newWilds, stickyCells, hits,
+        winX, multUsed, damage, charged, bossIndex, hp, mult, spinsLeft, events,
       });
       if (startX + totalX >= mode.maxWinX) break;
     }
     const cleared = bossIndex >= list.length;
-    return { tier, glory, cleared, spins: cfg.spins, startMult, bosses: list, steps, totalX };
+    return { tier, hero: heroId, glory, cleared, spins: startSpins, startMult, bosses: list, steps, totalX };
   }
 
   // Loot roll for a base spin. Always draws the same number of floats.
@@ -447,7 +594,8 @@
   }
 
   // Step 1 of a bonus buy. Gear and the dry-spin counter are unaffected.
-  function startBuy(rngFor, bet, progress, modeId, buyId) {
+  // Glory or Wipe is priced for `heroId`, and the class is locked for that raid.
+  function startBuy(rngFor, bet, progress, modeId, buyId, heroId = DEFAULT_HERO) {
     const buy = BUYS.find((b) => b.id === buyId);
     if (!buy) throw new Error(`Unknown buy: ${buyId}`);
     const rng = rngFor('');
@@ -467,12 +615,15 @@
       buy: buyId,
       mode: modeId,
       bet,
-      costX: buyPrice(modeId, buyId),
+      costX: buyPrice(modeId, buyId, heroId),
       progressBefore: { gear: progress.gear, dry: progress.dry },
       progressAfter: { gear: progress.gear, dry: progress.dry },
       loot: null,
       base: null,
-      bonus: { source: buy.glory ? 'glory' : buy.tier === null ? 'mystery' : 'buy', triggeredTier: rolled, tier, glory: !!buy.glory },
+      bonus: {
+        source: buy.glory ? 'glory' : buy.tier === null ? 'mystery' : 'buy', triggeredTier: rolled, tier, glory: !!buy.glory,
+        ...(buy.glory ? { hero: heroId } : {}),
+      },
     };
   }
 
@@ -486,23 +637,28 @@
     return { from: tier, to: won ? tier + 1 : null, chance, won };
   }
 
-  // Final step: play the raid (if the bonus survived) and total the round.
-  function finishRound(rngFor, round) {
+  // Final step: play the raid (if the bonus survived) as `heroId` and total
+  // the round. A Glory or Wipe raid always uses the class it was priced for.
+  function finishRound(rngFor, round, heroId = DEFAULT_HERO) {
     const mode = getMode(round.mode);
     const baseX = round.base ? round.base.winX : 0;
     let raid = null;
-    if (round.bonus && round.bonus.tier !== null) raid = runRaid(rngFor('raid'), mode, round.bonus.tier, baseX, !!round.bonus.glory);
+    if (round.bonus && round.bonus.tier !== null) {
+      const hero = round.bonus.hero || heroId;
+      getHero(hero);
+      raid = runRaid(rngFor('raid'), mode, round.bonus.tier, baseX, !!round.bonus.glory, hero);
+    }
     const totalX = baseX + (raid ? raid.totalX : 0);
     return { ...round, raid, totalX, totalWin: Math.round(totalX * round.bet * 100) / 100 };
   }
 
   // Full replay of a round from seeds and recorded choices.
-  // opts: { bet, progress, mode, buy (id or null), gambles (attempts made) }.
+  // opts: { bet, progress, mode, buy (id or null), gambles (attempts made), hero }.
   function playRound(rngFor, opts) {
     const mode = opts.mode || DEFAULT_MODE;
     const progress = opts.progress || { gear: 0, dry: 0 };
     const round = opts.buy
-      ? startBuy(rngFor, opts.bet, progress, mode, opts.buy)
+      ? startBuy(rngFor, opts.bet, progress, mode, opts.buy, opts.hero || DEFAULT_HERO)
       : startSpin(rngFor, opts.bet, progress, mode);
     round.gambles = [];
     for (let i = 0; i < (opts.gambles || 0); i++) {
@@ -512,13 +668,13 @@
       round.bonus = { ...round.bonus, tier: g.to };
       if (!g.won) break;
     }
-    return finishRound(rngFor, round);
+    return finishRound(rngFor, round, opts.hero || DEFAULT_HERO);
   }
 
   return {
     REELS, ROWS, BUY_RTP, SYMBOLS, TIERS, TOP_TIER, ASCEND_CHANCE, MYSTERY_WEIGHTS, GLORY_WEIGHTS, BUYS,
-    GEAR, GEAR_FULL, CACHES, MODES, DEFAULT_MODE,
-    getMode, lootChance, payFor, minLength, gearCount, gambleChance, canGamble, buyPrice, raidBosses,
+    GEAR, GEAR_FULL, CACHES, MODES, DEFAULT_MODE, HEROES, DEFAULT_HERO,
+    getMode, getHero, heroScaleFor, lootChance, payFor, minLength, gearCount, gambleChance, canGamble, buyPrice, raidBosses,
     startSpin, startBuy, gamble, finishRound, playRound, runRaid, evaluate,
   };
 });

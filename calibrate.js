@@ -1,7 +1,13 @@
-// Measures each bonus tier's mean raid win per mode (x bet), in parallel.
-// Paste the printed arrays into each mode's `calibration` in shared/game.js:
-// they set the fair gamble odds and the buy prices.
-// Usage: node calibrate.js [raidsPerTier] [mode|all]
+// Balances each mode's raids per class, in parallel.
+//
+// Each mode's `calibration` is the design target: the mean raid win per tier
+// (x bet). It sets the fair gamble odds and the buy prices. This script plays
+// raids for every class and tier with the current `heroScale`, then prints a
+// corrected `heroScale` (so every class averages the target) and each class's
+// `clearRate` (used to price Glory or Wipe). Paste both into the mode in
+// shared/game.js, run it again until the means sit on target, then confirm
+// the paid-spin RTP with `node rtp.js`.
+// Usage: node calibrate.js [raidsPerClassAndTier] [mode|all]
 'use strict';
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const os = require('os');
@@ -9,60 +15,65 @@ const Game = require('./shared/game');
 const { simulateTier } = require('./shared/sim');
 
 if (!isMainThread) {
-  const { raids, mode, tier, seed } = workerData;
-  parentPort.postMessage(simulateTier(raids, mode, tier, seed));
+  const { raids, mode, tier, hero, seed } = workerData;
+  parentPort.postMessage(simulateTier(raids, mode, tier, seed, hero));
 } else {
-  const raids = Number(process.argv[2]) || 2000000;
+  const raids = Number(process.argv[2]) || 300000;
   const which = process.argv[3] || 'all';
   const modes = which === 'all' ? Object.keys(Game.MODES) : [which];
-  const workers = Math.max(1, os.cpus().length - 1);
+  const workers = Math.max(1, os.cpus().length);
+  const chunks = 2;
 
   const jobs = [];
   for (const mode of modes) {
-    for (let tier = 0; tier < Game.TIERS.length; tier++) {
-      for (let w = 0; w < workers; w++) {
-        jobs.push({ mode, tier, raids: Math.ceil(raids / workers), seed: (Date.now() + jobs.length * 7919) >>> 0 });
+    for (const { id: hero } of Game.HEROES) {
+      for (let tier = 0; tier < Game.TIERS.length; tier++) {
+        for (let c = 0; c < chunks; c++) {
+          jobs.push({ mode, hero, tier, raids: Math.ceil(raids / chunks), seed: (Date.now() + jobs.length * 7919) >>> 0 });
+        }
       }
     }
   }
   const results = {};
   let next = 0;
-  let finished = 0;
-  const run = () => new Promise((resolve) => {
-    const pump = () => {
-      if (finished === jobs.length) return resolve();
-      if (next >= jobs.length) return;
-      const job = jobs[next++];
-      const worker = new Worker(__filename, { workerData: job });
-      worker.once('message', (r) => {
-        const key = `${job.mode}:${job.tier}`;
-        const acc = (results[key] = results[key] || { raids: 0, sum: 0, sumSq: 0, maxX: 0, maxWins: 0, clears: 0 });
-        acc.raids += r.raids; acc.sum += r.sum; acc.sumSq += r.sumSq; acc.clears += r.clears;
-        acc.maxX = Math.max(acc.maxX, r.maxX); acc.maxWins += r.maxWins;
-        finished++;
-        pump();
-      });
-    };
-    for (let i = 0; i < workers; i++) pump();
-  });
-
-  run().then(() => {
-    setTimeout(() => {
-      for (const mode of modes) {
-        const means = [];
-        const clears = [];
-        console.log(`\n== ${Game.MODES[mode].label} ==`);
-        Game.TIERS.forEach((t, tier) => {
-          const a = results[`${mode}:${tier}`];
+  let running = 0;
+  const report = () => {
+    for (const mode of modes) {
+      const m = Game.MODES[mode];
+      const scale = {};
+      const clear = {};
+      console.log(`\n== ${m.label} ==  target ${m.calibration.map((x) => x + 'x').join(' / ')}`);
+      for (const { id: hero } of Game.HEROES) {
+        scale[hero] = [];
+        clear[hero] = [];
+        const cells = Game.TIERS.map((t, tier) => {
+          const a = results[`${mode}:${hero}:${tier}`];
           const mean = a.sum / a.raids;
           const se = Math.sqrt((a.sumSq / a.raids - mean * mean) / a.raids);
-          means.push(Number(mean.toFixed(2)));
-          clears.push(Number((a.clears / a.raids).toPrecision(4)));
-          console.log(`${t.name.padEnd(20)} mean ${mean.toFixed(2)}x ± ${(1.96 * se).toFixed(2)}  max ${a.maxX.toFixed(0)}x  capped ${a.maxWins}  clears ${(a.clears / a.raids * 100).toFixed(4)}%`);
+          const old = Game.heroScaleFor(m, tier, hero);
+          scale[hero].push(Number((old * m.calibration[tier] / mean).toPrecision(4)));
+          clear[hero].push(Number((a.clears / a.raids).toPrecision(4)));
+          return `${mean.toFixed(1)}x ±${(1.96 * se).toFixed(1)} clear ${(a.clears / a.raids * 100).toFixed(2)}%`;
         });
-        console.log(`calibration: [${means.join(', ')}],`);
-        console.log(`clearRate: [${clears.join(', ')}],`);
+        console.log(`${hero.padEnd(8)} ${cells.join(' | ')}`);
       }
-    }, 200);
-  });
+      const fmt = (obj) => `{\n${Object.entries(obj).map(([k, v]) => `        ${k}: [${v.join(', ')}],`).join('\n')}\n      }`;
+      console.log(`heroScale: ${fmt(scale)},`);
+      console.log(`clearRate: ${fmt(clear)},`);
+    }
+  };
+  const pump = () => {
+    while (running < workers && next < jobs.length) {
+      const job = jobs[next++];
+      running++;
+      const w = new Worker(__filename, { workerData: job });
+      w.once('message', (r) => {
+        const key = `${job.mode}:${job.hero}:${job.tier}`;
+        const acc = (results[key] = results[key] || { raids: 0, sum: 0, sumSq: 0, clears: 0 });
+        acc.raids += r.raids; acc.sum += r.sum; acc.sumSq += r.sumSq; acc.clears += r.clears;
+      });
+      w.once('exit', () => { running--; if (next < jobs.length) pump(); else if (!running) report(); });
+    }
+  };
+  pump();
 }

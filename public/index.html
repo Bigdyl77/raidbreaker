@@ -25,15 +25,17 @@
 
       <section id="raid-bar" class="raid-bar hidden" aria-live="polite">
         <div class="raid-top">
-          <span><span id="raid-tier" class="tier-chip"></span> <span id="boss-name" class="boss-name"></span></span>
+          <span><span id="raid-hero" class="hero-chip"></span> <span id="raid-tier" class="tier-chip"></span> <span id="boss-name" class="boss-name"></span></span>
           <span class="raid-stats">
             <span>Multiplier <b id="raid-mult">x1</b></span>
+            <span>Next kill <b id="raid-next">x2</b></span>
+            <span id="raid-charge" class="hidden">Charge <b id="raid-charge-val">0/4</b></span>
             <span>Spins <b id="raid-spins">0</b></span>
             <span>Win <b id="raid-win">0.00</b></span>
             <button id="skip-bonus" class="small-btn">Skip bonus ⏭</button>
           </span>
         </div>
-        <div class="hp-track"><div id="hp-fill" class="hp-fill"></div><span id="hp-text" class="hp-text"></span></div>
+        <div id="hp-track" class="hp-track"><div id="hp-lag" class="hp-lag"></div><div id="hp-fill" class="hp-fill"></div><span id="hp-text" class="hp-text"></span><span id="hp-pop" class="hp-pop"></span></div>
         <div id="boss-pips" class="boss-pips"></div>
       </section>
 
@@ -46,6 +48,9 @@
             <h2 id="decision-title">Bonus!</h2>
             <p id="decision-sub" class="hint"></p>
             <ol id="tier-ladder" class="tier-ladder"></ol>
+            <label class="pick-label">Choose your class</label>
+            <div id="hero-pick" class="hero-pick" role="radiogroup" aria-label="Class"></div>
+            <p id="hero-desc" class="hint hero-desc"></p>
             <div class="overlay-actions">
               <button id="gamble" class="gamble-btn"></button>
               <button id="play-bonus" class="play-btn">Enter raid</button>
@@ -119,6 +124,7 @@
         <div class="row">
           <div><label for="v-mode">Mode</label><select id="v-mode"></select></div>
           <div><label for="v-kind">Round</label><select id="v-kind"></select></div>
+          <div><label for="v-hero">Class</label><select id="v-hero"></select></div>
         </div>
         <div class="row">
           <div><label for="v-gambles">Gambles taken</label><input id="v-gambles" type="number" min="0" max="3" value="0"></div>
@@ -168,6 +174,8 @@
     <div class="modal-card">
       <h2 id="buy-title">Buy a bonus</h2>
       <p class="hint">Prices are multiples of your bet. Any bonus can ascend when it starts, which is the only way to find the Super Hidden Bonus besides the gamble.</p>
+      <label class="pick-label">Class <span class="hint">(Glory or Wipe is priced for it and keeps it)</span></label>
+      <div id="buy-heroes" class="hero-pick compact" role="radiogroup" aria-label="Class"></div>
       <div id="buy-list" class="buy-list"></div>
       <button id="buy-close" class="wide">Cancel</button>
     </div>

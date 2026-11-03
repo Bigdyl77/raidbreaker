@@ -21,7 +21,9 @@ In the static build the server seed lives in the player's browser, so it's a pla
 
 - 5 reels × 4 rows, ways pays from the left. Raid Banner wilds land on reels 2–4, and Boss Gate scatters can land on any reel.
 - **Volatility modes**: Steady (constant small wins, 1,000x cap), Standard (5,000x cap) and Mega (runes need 4+ to pay, x100 final boss, x500 secret boss, 100,000x cap). Each mode is tuned to 98.5–99% RTP.
-- **Raids**: every wild that lands in the bonus damages the current boss. Killing a boss raises the multiplier for the rest of the raid and adds spins.
+- **Raids**: every wild that lands in the bonus damages the current boss. Killing a boss raises the multiplier for the rest of the raid and adds spins. Boss HP is tuned per tier so every tier clears only about 1–20% of the time.
+- **Sticky wilds**: in Super, Hidden and Super Hidden raids, a wild stays on the reels for 1, 2 or 3 more spins and hits the boss again each spin.
+- **Classes**: the player picks a class before each raid. Warrior (+4 spins), Rogue (crits), Mage (1.5x kill multipliers, charged spins), Hunter (middle-reel wilds hit for 2) and Priest (resurrection, +1 spin per kill). Raid pays are scaled per class and tier (`heroScale`), so every class has the same average win and gamble odds and buy prices don't depend on the pick. Clear rates differ, so Glory or Wipe is priced for the class it's bought with, and that class is locked for the raid.
 - **Bonus tiers**: Normal (3 scatters), Super (4), Hidden (5) and Super Hidden. Higher tiers start deeper into the raid. Super Hidden adds a secret boss and can't be bought.
 - **Ascension**: any bonus that starts (spun or bought) can climb tiers. Normal to Super Hidden is about 1 in 222,000.
 - **Gamble**: before a raid, you can gamble for the next tier. A loss forfeits the bonus. The odds equal the ratio of the tiers' values, so gambling doesn't change your expected return. This is deliberate: making the Hidden → Super Hidden step rarer would need a house edge on the gamble, which would lower the real RTP. Super Hidden stays rare through ascension instead.
@@ -45,10 +47,10 @@ Before a round, the server shows `SHA-256(serverSeed)`. Each round draws floats 
 | `public/local.js`, `build-static.js` | The static build: runs `shared/house.js` in the page and saves to localStorage |
 | `public/` | The browser client |
 | `rtp.js` | Parallel RTP check: `node rtp.js 100000000 mega` |
-| `calibrate.js` | Measures tier values and clear rates. Paste its output into each mode's `calibration` / `clearRate` |
+| `calibrate.js` | Balances classes: prints each mode's `heroScale` (so every class averages the tier's `calibration` target) and per-class `clearRate`. Paste into the mode and re-run until on target |
 | `test.js` | Hash correctness, replay determinism, and stepwise-vs-replay checks |
 
-After changing a mode's math, run `calibrate.js`, paste in the results, then confirm with `rtp.js`.
+After changing a mode's raid math, run `calibrate.js`, paste in `heroScale` and `clearRate`, run it again until every class sits on the target, then confirm with `rtp.js`. Changing `calibration` itself (the tier values) changes the RTP, so re-check `rtp.js` and the base `scale` too.
 
 ## Not production
 
