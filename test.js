@@ -101,4 +101,29 @@ for (const [modeId, mode] of Object.entries(Game.MODES)) {
     }
   }));
 }
+// The static build saves state between page loads, including a bonus waiting
+// on the gamble. A restored house must finish that round exactly like one
+// that never reloaded.
+{
+  const { createHouse } = require('./shared/house');
+  let n = 0;
+  const newSeed = () => crypto.createHash('sha256').update('house-' + n++).digest('hex');
+  let checked = 0;
+  for (let i = 0; i < 4000 && checked < 20; i++) {
+    const a = createHouse({ newSeed });
+    for (let spin = 0; spin < 400; spin++) {
+      const r = a.handlerFor('POST /api/spin')({ body: { bet: 1 } });
+      if (r.done) continue;
+      try { a.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ }
+      if (!a.state.pending) break;
+      const b = createHouse({ newSeed, saved: JSON.parse(JSON.stringify(a.snapshot())) });
+      const play = (h) => { try { h.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ } return h.state.pending ? h.handlerFor('POST /api/bonus/play')({ body: { hero: Game.HEROES[checked % Game.HEROES.length].id } }) : null; };
+      assert.deepStrictEqual(play(b), play(a), 'restored pending round finishes identically');
+      assert.deepStrictEqual(b.snapshot(), a.snapshot(), 'restored house state matches');
+      checked++;
+      break;
+    }
+  }
+  assert.ok(checked >= 5, 'restore test hit pending bonuses');
+}
 console.log('All tests passed');
