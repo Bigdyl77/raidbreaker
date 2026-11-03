@@ -15,6 +15,14 @@
       </header>
       <p id="mode-blurb" class="hint mode-blurb"></p>
 
+      <section class="class-bar" aria-label="Class">
+        <div class="class-head">
+          <span>Class <b id="class-name"></b></span>
+          <span id="class-ability" class="hint"></span>
+        </div>
+        <div id="heroes" class="hero-pick compact" role="radiogroup" aria-label="Class"></div>
+      </section>
+
       <section class="gear-bar" aria-label="Gear">
         <div class="gear-head">
           <span>Gear <b id="gear-count">0/6</b></span>
@@ -48,9 +56,7 @@
             <h2 id="decision-title">Bonus!</h2>
             <p id="decision-sub" class="hint"></p>
             <ol id="tier-ladder" class="tier-ladder"></ol>
-            <label class="pick-label">Choose your class</label>
-            <div id="hero-pick" class="hero-pick" role="radiogroup" aria-label="Class"></div>
-            <p id="hero-desc" class="hint hero-desc"></p>
+            <p id="decision-hero" class="hint hero-desc"></p>
             <div class="overlay-actions">
               <button id="gamble" class="gamble-btn"></button>
               <button id="play-bonus" class="play-btn">Enter raid</button>
@@ -174,10 +180,18 @@
     <div class="modal-card">
       <h2 id="buy-title">Buy a bonus</h2>
       <p class="hint">Prices are multiples of your bet. Any bonus can ascend when it starts, which is the only way to find the Super Hidden Bonus besides the gamble.</p>
-      <label class="pick-label">Class <span class="hint">(Glory or Wipe is priced for it and keeps it)</span></label>
-      <div id="buy-heroes" class="hero-pick compact" role="radiogroup" aria-label="Class"></div>
       <div id="buy-list" class="buy-list"></div>
       <button id="buy-close" class="wide">Cancel</button>
+    </div>
+  </div>
+
+  <div id="class-modal" class="modal hidden" role="dialog" aria-labelledby="class-title">
+    <div class="modal-card">
+      <h2 id="class-title">Choose your class</h2>
+      <p class="hint">Your class changes how every raid plays. All classes have the same average win. You can switch any time between spins from the class bar.</p>
+      <div id="class-modal-pick" class="hero-pick" role="radiogroup" aria-label="Class"></div>
+      <p id="class-modal-desc" class="hint hero-desc"></p>
+      <button id="class-confirm" class="play-btn wide">Start raiding</button>
     </div>
   </div>
 

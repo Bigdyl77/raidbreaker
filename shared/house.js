@@ -25,8 +25,8 @@
       clientSeed: newSeed().slice(0, 16),
       nonce: 0,
       mode: Game.DEFAULT_MODE,
-      // The class used for raids. Picked before each raid (or before a Glory
-      // or Wipe buy, which is priced for it), and remembered between rounds.
+      // The player's class (profile). Chosen before spinning or buying and
+      // changeable between rounds; a round always uses the class it started with.
       hero: Game.DEFAULT_HERO,
       progress: Object.fromEntries(Object.keys(Game.MODES).map((m) => [m, { gear: 0, dry: 0 }])),
       // A round whose bonus is waiting for the player to gamble or play.
@@ -139,15 +139,12 @@
       return { round: done, nonce, done: true, state: publicState() };
     }
 
-    // Sets the raid class. Allowed between rounds, or while a bonus waits
-    // unless it's Glory or Wipe (that raid was priced for its class).
+    // Sets the class. Only between rounds, so a round always plays (and Glory
+    // or Wipe is always priced) with the class it started with.
     function setHero(value) {
-      if (value === undefined) return;
       const hero = Game.HEROES.find((h) => h.id === value);
       if (!hero) throw httpError(400, 'Unknown class');
-      if (state.pending && state.pending.round.bonus && state.pending.round.bonus.glory && hero.id !== state.hero) {
-        throw httpError(409, 'Glory or Wipe keeps the class it was bought with');
-      }
+      requireNoPending();
       state.hero = hero.id;
     }
 
@@ -180,7 +177,6 @@
         const mode = state.mode;
         const buy = Game.BUYS.find((b) => b.id === body.buy);
         if (!buy) throw httpError(400, 'Unknown buy');
-        setHero(body.hero);
         const hero = state.hero;
         return begin((rngFor) => Game.startBuy(rngFor, bet, state.progress[mode], mode, buy.id, hero), Game.buyPrice(mode, buy.id, hero), bet);
       },
@@ -201,9 +197,8 @@
         return publicState();
       },
 
-      'POST /api/bonus/play': ({ body = {} } = {}) => {
+      'POST /api/bonus/play': () => {
         if (!state.pending) throw httpError(409, 'No bonus waiting');
-        setHero(body.hero);
         return finish();
       },
 

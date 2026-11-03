@@ -368,3 +368,11 @@ th { color: var(--muted); font-weight: 600; }
 @keyframes shake { 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 .banner small.near { color: #ffb3b3; font-style: italic; }
 .banner { flex-direction: column; }
+
+/* Class bar (profile) */
+.class-bar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; }
+.class-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-size: 13px; margin-bottom: 6px; }
+.class-head b { color: var(--gold2); }
+.class-bar .hero-card { flex-direction: row; justify-content: center; gap: 6px; padding: 5px 4px; }
+.class-bar .hero-card small { display: none; }
+#class-modal .modal-card { width: min(520px, 100%); }
