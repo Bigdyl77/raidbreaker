@@ -1,0 +1,17 @@
+{
+  "name": "raidbreaker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provably fair dungeon-raid slot prototype (play money).",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --dev",
+    "test": "node test.js",
+    "sim": "node shared/sim.js 1000000 all",
+    "rtp": "node rtp.js 100000000 all",
+    "calibrate": "node calibrate.js 1500000 all"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

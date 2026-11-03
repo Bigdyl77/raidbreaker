@@ -1,0 +1,4 @@
+node_modules/
+sim-*.txt
+*.log
+.DS_Store
