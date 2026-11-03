@@ -39,6 +39,8 @@ const skipping = () => inRaid && skipRequested;
 const wait = (ms) => (skipping() ? Promise.resolve() : sleep(ms));
 
 async function api(path, body) {
+  // The static build (see build-static.js) runs the game in the page instead.
+  if (window.LocalApi) return window.LocalApi(path, body);
   const res = await fetch(path, body === undefined ? {} : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
