@@ -15,7 +15,7 @@ npm test
 - **Raids**: every wild that lands in the bonus damages the current boss. Killing a boss raises the multiplier for the rest of the raid and adds spins.
 - **Bonus tiers**: Normal (3 scatters), Super (4), Hidden (5) and Super Hidden. Higher tiers start deeper into the raid. Super Hidden adds a secret boss and can't be bought.
 - **Ascension**: any bonus that starts (spun or bought) can climb tiers. Normal to Super Hidden is about 1 in 222,000.
-- **Gamble**: before a raid, you can gamble for the next tier. A loss forfeits the bonus. The odds equal the ratio of the tiers' values, so gambling doesn't change your expected return.
+- **Gamble**: before a raid, you can gamble for the next tier. A loss forfeits the bonus. The odds equal the ratio of the tiers' values, so gambling doesn't change your expected return. This is deliberate: making the Hidden → Super Hidden step rarer would need a house edge on the gamble, which would lower the real RTP. Super Hidden stays rare through ascension instead.
 - **Gear loot**: rare items attach to symbols on base spins, and a full 6-piece set starts a Normal Bonus. The drop chance climbs during dry streaks, and caches can drop 2–3 pieces at once.
 - **Buys**: Normal, Super, Hidden, Mystery (random tier) and **Glory or Wipe** (random tier, even Super Hidden). In Glory or Wipe, clearing every boss pays the mode's max win and anything less pays nothing.
 
