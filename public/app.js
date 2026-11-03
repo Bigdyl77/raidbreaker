@@ -20,9 +20,9 @@ const prefs = {
 };
 
 const SPEEDS = {
-  normal: { spinMin: 650, stagger: 140, cycle: 70, fsPause: 650, winHold: 900, banner: 1400 },
-  turbo: { spinMin: 220, stagger: 50, cycle: 45, fsPause: 200, winHold: 320, banner: 650 },
-  super: { spinMin: 0, stagger: 0, cycle: 40, fsPause: 35, winHold: 60, banner: 260 },
+  normal: { spinMin: 650, stagger: 140, cycle: 70, fsPause: 650, winHold: 900, banner: 1400, teaser: 700, pop: 700 },
+  turbo: { spinMin: 220, stagger: 50, cycle: 45, fsPause: 200, winHold: 320, banner: 650, teaser: 300, pop: 350 },
+  super: { spinMin: 0, stagger: 0, cycle: 40, fsPause: 35, winHold: 60, banner: 260, teaser: 0, pop: 0 },
 };
 
 let S = null; // latest server state
@@ -31,6 +31,7 @@ let busy = false;
 let inRaid = false;
 let skipRequested = false;
 let speed = prefs.get('speed', 'normal');
+const heroById = (id) => Game.HEROES.find((h) => h.id === id) || Game.getHero(Game.DEFAULT_HERO);
 if (!SPEEDS[speed]) speed = 'normal';
 
 const sp = () => SPEEDS[speed];
@@ -74,8 +75,8 @@ const LABELS = { W: 'Wild', B: 'Boss' };
 function setCell(cell, sym, extra = '') {
   const def = Game.SYMBOLS[sym];
   cell.className = `cell sym-${sym}${def.kind === 'low' ? ' rune' : ''}${def.kind === 'high' ? ' high' : ''}${extra}`;
-  cell.firstChild.textContent = def.icon;
-  cell.lastChild.textContent = LABELS[sym] || (def.kind === 'high' ? def.name : '');
+  cell.children[0].textContent = def.icon;
+  cell.children[1].textContent = LABELS[sym] || (def.kind === 'high' ? def.name : '');
 }
 
 function renderGrid(grid, landed = false) {
@@ -84,7 +85,7 @@ function renderGrid(grid, landed = false) {
 
 function clearMarks() {
   board.classList.remove('has-win');
-  board.querySelectorAll('.loot-badge').forEach((b) => b.remove());
+  board.querySelectorAll('.loot-badge, .dmg-pop').forEach((b) => b.remove());
 }
 
 function markCells(list, cls) {
@@ -95,21 +96,34 @@ const SYMBOL_POOL = Object.keys(Game.SYMBOLS);
 const randomSym = () => SYMBOL_POOL[Math.floor(Math.random() * SYMBOL_POOL.length)];
 
 // Spins the reels until `gridPromise` resolves, then stops them left to right.
-async function spinReels(gridPromise) {
+// opts.fixed: Set of cell keys (reel * ROWS + row) that hold a sticky wild and
+// don't spin. opts.teaser(reel, grid): true to hold that reel back for suspense.
+const cellKey = (r, row) => r * Game.ROWS + row;
+async function spinReels(gridPromise, opts = {}) {
   clearMarks();
   const s = sp();
-  if (skipping()) { renderGrid(await gridPromise); return; }
+  const fixed = opts.fixed || new Set();
+  const draw = (grid, extra) => grid.forEach((col, r) => col.forEach((sym, row) => {
+    setCell(cells[r][row], sym, fixed.has(cellKey(r, row)) ? ' sticky' : extra);
+  }));
+  if (skipping()) { draw(await gridPromise, ''); return; }
   const stopped = Array(Game.REELS).fill(false);
   const tick = () => cells.forEach((col, r) => {
-    if (!stopped[r]) col.forEach((cell) => setCell(cell, randomSym(), ' spinning'));
+    if (!stopped[r]) col.forEach((cell, row) => { if (!fixed.has(cellKey(r, row))) setCell(cell, randomSym(), ' spinning'); });
   });
+  fixed.forEach((k) => setCell(cells[Math.floor(k / Game.ROWS)][k % Game.ROWS], 'W', ' sticky'));
   tick();
   const timer = setInterval(tick, s.cycle);
   try {
     const [grid] = await Promise.all([gridPromise, sleep(s.spinMin)]);
     for (let r = 0; r < Game.REELS; r++) {
+      if (opts.teaser && s.teaser && !skipping() && opts.teaser(r, grid)) {
+        board.children[r].classList.add('teaser');
+        await sleep(s.teaser);
+        board.children[r].classList.remove('teaser');
+      }
       stopped[r] = true;
-      grid[r].forEach((sym, row) => setCell(cells[r][row], sym, ' landed'));
+      grid[r].forEach((sym, row) => setCell(cells[r][row], sym, fixed.has(cellKey(r, row)) ? ' sticky' : ' landed'));
       if (s.stagger && !skipping()) await sleep(s.stagger);
     }
   } finally {
@@ -152,49 +166,120 @@ function renderGear(progress, newSlots = []) {
 
 function renderRaidBar(raid, view) {
   const tier = Game.TIERS[raid.tier];
+  const hero = heroById(raid.hero);
   const chip = $('raid-tier');
   chip.className = `tier-chip t-${tier.id}`;
   chip.textContent = raid.glory ? `${tier.name} · Glory or Wipe` : tier.name;
+  $('raid-hero').textContent = `${hero.icon} ${hero.name}`;
   const list = raid.bosses;
   const cleared = view.bossIndex >= list.length;
   $('boss-name').textContent = cleared ? 'Raid cleared!' : list[view.bossIndex].name;
   const max = cleared ? 1 : list[view.bossIndex].hp;
-  const hp = cleared ? 0 : Math.max(view.hp, 0);
-  $('hp-fill').style.width = `${(hp / max) * 100}%`;
+  const hp = cleared ? 0 : Math.max(0, view.hp);
+  const width = `${(hp / max) * 100}%`;
+  $('hp-fill').style.width = width;
+  $('hp-lag').style.width = width;
   $('hp-text').textContent = cleared ? 'All bosses down' : `${hp} / ${max} HP`;
   $('raid-mult').textContent = 'x' + view.mult;
+  $('raid-next').textContent = cleared ? '—' : 'x' + list[view.bossIndex].reward;
   $('raid-spins').textContent = view.spinsLeft;
   $('raid-win').textContent = raid.glory ? (cleared ? 'MAX' : '—') : money(view.win);
+  const charge = hero.charge;
+  $('raid-charge').classList.toggle('hidden', !charge);
+  if (charge) {
+    const n = view.played % charge.every;
+    $('raid-charge-val').textContent = n === charge.every - 1 ? 'READY ⚡' : `${n}/${charge.every - 1}`;
+  }
   $('boss-pips').innerHTML = list.map((b, i) => {
     const cls = i < view.bossIndex ? 'dead' : i === view.bossIndex ? 'current' : '';
     const secret = i === Game.MODES[S.mode].bosses.length ? ' secret' : '';
-    return `<span class="pip ${cls}${secret}">${esc(b.name)} · x${b.reward}</span>`;
+    return `<span class="pip ${cls}${secret}">${esc(b.name)} · ${b.hp} HP · x${b.reward}</span>`;
   }).join('');
+}
+
+// Floating damage numbers on the cells that hit, and on the HP bar.
+function showHits(step) {
+  if (skipping() || !sp().pop) return;
+  step.hits.forEach((h) => {
+    const cell = cells[h.cell[0]][h.cell[1]];
+    cell.classList.remove('hit', 'crit');
+    void cell.offsetWidth;
+    cell.classList.add('hit');
+    if (h.crit || step.charged || h.marked) cell.classList.add('crit');
+    const pop = document.createElement('span');
+    pop.className = 'dmg-pop' + (h.crit ? ' crit' : h.marked ? ' marked' : '') + (step.charged ? ' charged' : '');
+    pop.textContent = `-${h.dmg}${h.crit ? ' CRIT' : ''}`;
+    cell.appendChild(pop);
+  });
+  if (step.damage > 0) {
+    const pop = $('hp-pop');
+    pop.textContent = `-${step.damage}`;
+    pop.classList.remove('show');
+    void pop.offsetWidth;
+    pop.classList.add('show');
+    const track = $('hp-track');
+    track.classList.remove('shake');
+    void track.offsetWidth;
+    track.classList.add('shake');
+  }
+}
+
+// What the raid summary banner says.
+function raidRecap(raid, modeId) {
+  const m = Game.getMode(modeId);
+  const start = m.tiers[raid.tier].startBoss;
+  const last = raid.steps[raid.steps.length - 1];
+  const end = last ? last.bossIndex : start;
+  const dmg = raid.steps.reduce((n, st) => n + st.damage, 0);
+  const crits = raid.steps.reduce((n, st) => n + st.hits.filter((h) => h.crit).length, 0);
+  const best = raid.steps.reduce((x, st) => Math.max(x, st.winX), 0);
+  const parts = [`${end - start}/${raid.bosses.length - start} bosses`, `${dmg} damage`];
+  if (crits) parts.push(`${crits} crit${crits > 1 ? 's' : ''}`);
+  if (!raid.glory && best > 0) parts.push(`best spin ${xFmt(best)}`);
+  let near = '';
+  if (last && !raid.cleared) {
+    const boss = raid.bosses[end];
+    if (last.hp <= Math.max(3, boss.hp * 0.25)) near = `<small class="near">${esc(boss.name)} survived with ${last.hp} HP!</small>`;
+  }
+  return `<small>${parts.join(' · ')}</small>${near}`;
 }
 
 async function playRaid(round) {
   const raid = round.raid;
   const bet = round.bet;
   const tier = Game.TIERS[raid.tier];
+  const hero = heroById(raid.hero);
+  const cfg = Game.getMode(round.mode).tiers[raid.tier];
   inRaid = true;
   skipRequested = false;
-  const view = { bossIndex: Game.getMode(round.mode).tiers[raid.tier].startBoss, hp: 0, mult: raid.startMult, spinsLeft: raid.spins, win: 0 };
+  const view = { bossIndex: cfg.startBoss, hp: 0, mult: raid.startMult, spinsLeft: raid.spins, win: 0, played: 0 };
   view.hp = raid.bosses[view.bossIndex].hp;
   $('raid-bar').classList.remove('hidden');
   renderRaidBar(raid, view);
-  await banner(`${esc(tier.title)}<small>${raid.glory
+  const sticky = cfg.sticky ? ` · wilds stick for ${cfg.sticky} spin${cfg.sticky > 1 ? 's' : ''}` : '';
+  await banner(`${esc(tier.title)}<small>${hero.icon} ${esc(hero.name)} · ${raid.glory
     ? `Glory or Wipe: beat every boss for ${Game.MODES[round.mode].maxWinX.toLocaleString()}x. Spin wins don't count.`
-    : `${raid.spins} spins · starting multiplier x${raid.startMult}`}</small>`);
+    : `${raid.spins} spins · starting multiplier x${raid.startMult}${sticky}`}</small>`);
 
   for (const step of raid.steps) {
-    await spinReels(Promise.resolve(step.grid));
+    const hpBefore = view.hp;
+    const alive = view.bossIndex < raid.bosses.length;
+    const fixed = new Set(step.stickyCells.map(([r, row]) => cellKey(r, row)));
+    // Hold a wild reel back when the hits so far leave the boss within reach.
+    const teaser = (r) => {
+      if (!alive || r < 1 || r > 3) return false;
+      const sofar = step.hits.filter((h) => h.cell[0] < r).reduce((n, h) => n + h.dmg, 0);
+      const left = hpBefore - sofar;
+      return left > 0 && left <= 3;
+    };
+    await spinReels(Promise.resolve(step.grid), { fixed, teaser });
     if (!raid.glory && step.wins.length) {
       board.classList.add('has-win');
       step.wins.forEach((w) => markCells(w.cells, 'win'));
     }
-    if (step.wildCells.length && !skipping()) {
-      markCells(step.wildCells, 'hit');
-    }
+    if (step.charged && step.hits.length) setText('⚡ Arcane Charge: double damage!');
+    showHits(step);
+    view.played++;
     view.bossIndex = step.bossIndex;
     view.hp = step.hp;
     view.mult = step.mult;
@@ -202,11 +287,14 @@ async function playRaid(round) {
     view.win += step.winX * bet;
     renderRaidBar(raid, view);
     if (!raid.glory && step.winX > 0) setText(`${money(step.winX * bet)} <small>(x${step.multUsed})</small>`);
+    if (step.damage > 0 || step.hits.length) await wait(sp().pop);
     for (const ev of step.events) {
       if (ev.type === 'bossKilled') {
         await banner(`${esc(raid.bosses[ev.boss].name)} defeated!<small>Multiplier x${ev.mult} · +${ev.spins} spins</small>`, sp().banner);
       } else if (ev.type === 'retrigger') {
         setText(`+${ev.spins} spins!`);
+      } else if (ev.type === 'resurrect') {
+        await banner(`✨ Resurrection!<small>The Priest buys ${ev.spins} more spins</small>`, sp().banner);
       } else if (ev.type === 'maxWin') {
         await banner(`MAX WIN<small>${Game.MODES[round.mode].maxWinX.toLocaleString()}x</small>`, sp().banner * 1.5);
       }
@@ -215,15 +303,19 @@ async function playRaid(round) {
   }
   // Always end on the final state, even after a skip.
   const last = raid.steps[raid.steps.length - 1];
-  if (last) renderGrid(last.grid);
+  if (last) {
+    renderGrid(last.grid);
+    last.stickyCells.forEach(([r, row]) => cells[r][row].classList.add('sticky'));
+  }
   renderRaidBar(raid, { ...view, win: raid.totalX * bet });
   inRaid = false;
   skipRequested = false;
   $('raid-bar').classList.add('hidden');
+  const recap = raidRecap(raid, round.mode);
   if (raid.glory) {
-    await banner(raid.cleared ? `GLORY!<small>Every boss down: ${money(round.totalWin)}</small>` : 'WIPE<small>The raid fell. Better luck next pull.</small>', sp().banner * 1.3);
+    await banner(raid.cleared ? `GLORY!<small>Every boss down: ${money(round.totalWin)}</small>${recap}` : `WIPE${recap}`, sp().banner * 1.6);
   } else {
-    await banner(`Raid complete<small>${money(raid.totalX * bet)} (${xFmt(raid.totalX)})</small>`, sp().banner * 1.2);
+    await banner(`${raid.cleared ? 'RAID CLEARED!' : 'Raid complete'}<small>${money(raid.totalX * bet)} (${xFmt(raid.totalX)})</small>${recap}`, sp().banner * 1.6);
   }
 }
 
@@ -243,6 +335,25 @@ $('skip-confirm').addEventListener('click', () => {
   skipModal.classList.add('hidden');
   skipRequested = true;
 });
+
+/* ---------- Class picker ---------- */
+
+// Fills `el` with one button per class. tier: show each class's clear rate
+// for that tier. locked: only the given class can be picked.
+function renderHeroPick(el, selected, { tier = null, locked = false } = {}) {
+  const m = Game.MODES[S.mode];
+  el.innerHTML = Game.HEROES.map((h) => {
+    const clear = tier !== null ? `<small>clears ${pct(m.clearRate[h.id][tier], 1)}</small>` : `<small>${esc(h.style)}</small>`;
+    const off = locked && h.id !== selected ? 'disabled' : '';
+    return `<button class="hero-card${h.id === selected ? ' active' : ''}" data-hero="${h.id}" role="radio" aria-checked="${h.id === selected}" ${off}
+      title="${esc(h.ability)}"><span class="icon">${h.icon}</span>${esc(h.name)}${clear}</button>`;
+  }).join('');
+}
+
+function heroDesc(id) {
+  const h = heroById(id);
+  return `<b>${h.icon} ${esc(h.name)}</b> · ${esc(h.style)}. ${esc(h.ability)}`;
+}
 
 /* ---------- Bonus decision (gamble or play) ---------- */
 
@@ -272,9 +383,13 @@ function decide(resp) {
     const overlay = $('decision');
     const card = overlay.firstElementChild;
     let current = resp;
+    let hero = resp.round.bonus.hero || S.hero;
     const draw = () => {
       const round = current.round;
       const tier = round.bonus.tier;
+      const locked = !!round.bonus.glory;
+      renderHeroPick($('hero-pick'), hero, { tier, locked });
+      $('hero-desc').innerHTML = heroDesc(hero) + (locked ? ' <em>Locked: Glory or Wipe was priced for this class.</em>' : '');
       $('decision-title').textContent = Game.TIERS[tier].name + '!';
       const ascended = round.bonus.tier > round.bonus.triggeredTier && !round.gambles.length;
       $('decision-sub').textContent = sourceText(round.bonus, round) + (ascended ? ` Ascended from ${Game.TIERS[round.bonus.triggeredTier].name}!` : '');
@@ -308,15 +423,24 @@ function decide(resp) {
     };
     const onPlay = async () => {
       setButtons(true);
-      try { done(await api('/api/bonus/play', {})); } catch (e) { fail(e); } finally { setButtons(false); }
+      try { done(await api('/api/bonus/play', { hero })); } catch (e) { fail(e); } finally { setButtons(false); }
+    };
+    const onPick = (e) => {
+      const btn = e.target.closest('[data-hero]');
+      if (!btn || btn.disabled) return;
+      hero = btn.dataset.hero;
+      prefs.set('hero', hero);
+      draw();
     };
     const setButtons = (disabled) => { $('gamble').disabled = disabled; $('play-bonus').disabled = disabled; };
     const cleanup = () => {
       $('gamble').removeEventListener('click', onGamble);
       $('play-bonus').removeEventListener('click', onPlay);
+      $('hero-pick').removeEventListener('click', onPick);
     };
     $('gamble').addEventListener('click', onGamble);
     $('play-bonus').addEventListener('click', onPlay);
+    $('hero-pick').addEventListener('click', onPick);
     draw();
     overlay.classList.remove('hidden');
   });
@@ -409,7 +533,7 @@ function spin() {
 function buy(buyId) {
   return run(async () => {
     const bet = S.bets[betIndex];
-    const resp = await api('/api/buy', { bet, buy: buyId });
+    const resp = await api('/api/buy', { bet, buy: buyId, hero: S.hero });
     S = resp.state;
     render();
     clearMarks();
@@ -460,20 +584,29 @@ function buyBlurb(b, mode) {
     case 'super': return `${m.tiers[1].spins} spins, starts at x${m.bosses[0].reward}`;
     case 'hidden': return `${m.tiers[2].spins} spins, starts at x${m.bosses[1].reward}, more wilds`;
     case 'mystery': return Game.MYSTERY_WEIGHTS.map((w, i) => `${pct(w, 0)} ${Game.TIERS[i].name.replace(' Bonus', '')}`).join(' · ');
-    case 'glory': return `Random tier (${pct(Game.GLORY_WEIGHTS[3], 0)} Super Hidden). Beat every boss = ${m.maxWinX.toLocaleString()}x, else nothing.`;
+    case 'glory': return `Random tier (${pct(Game.GLORY_WEIGHTS[3], 0)} Super Hidden). Beat every boss = ${m.maxWinX.toLocaleString()}x, else nothing. Priced for your ${heroById(S.hero).name}.`;
     default: return '';
   }
 }
-$('buy-open').addEventListener('click', () => {
+function renderBuyList() {
   const bet = S.bets[betIndex];
+  renderHeroPick($('buy-heroes'), S.hero);
   $('buy-list').innerHTML = Game.BUYS.map((b) => {
-    const priceX = Game.buyPrice(S.mode, b.id);
+    const priceX = Game.buyPrice(S.mode, b.id, S.hero);
     const cost = Math.round(priceX * bet * 100) / 100;
     return `<button class="buy-item" data-buy="${b.id}" ${cost > S.balance ? 'disabled' : ''}>
       <span>${esc(b.name)}<small>${esc(buyBlurb(b, S.mode))}</small></span>
       <span class="price">${money(cost)}<small>${priceX}x bet</small></span></button>`;
   }).join('');
+}
+$('buy-open').addEventListener('click', () => {
+  renderBuyList();
   buyModal.classList.remove('hidden');
+});
+$('buy-heroes').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-hero]');
+  if (!btn || btn.dataset.hero === S.hero) return;
+  try { S = await api('/api/hero', { hero: btn.dataset.hero }); prefs.set('hero', S.hero); renderBuyList(); render(); } catch (err) { setText(esc(err.message)); }
 });
 $('buy-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-buy]');
@@ -522,7 +655,7 @@ function renderHistory() {
   const el = $('history');
   if (!S.history.length) { el.innerHTML = '<p class="hint">No rounds yet.</p>'; return; }
   el.innerHTML = S.history.map((h, i) => {
-    const tier = h.tier !== null ? `<span class="tier-chip t-${Game.TIERS[h.tier].id}">${esc(Game.TIERS[h.tier].name.replace(' Bonus', ''))}</span>` : '';
+    const tier = h.tier !== null ? `<span class="tier-chip t-${Game.TIERS[h.tier].id}">${esc(Game.TIERS[h.tier].name.replace(' Bonus', ''))}</span>${h.hero ? heroById(h.hero).icon : ''}` : '';
     const action = h.serverSeed ? `<button data-verify="${i}">Verify</button>` : '<span class="sub">rotate to verify</span>';
     const cls = h.tier !== null ? 'raid' : h.x >= 20 ? 'big' : '';
     return `<div class="item ${cls}"><div>#${h.nonce} ${esc(Game.MODES[h.mode].label)} · ${esc(kindLabel(h))} ${tier}
@@ -540,6 +673,7 @@ $('history').addEventListener('click', (e) => {
   $('v-bet').value = h.bet;
   $('v-mode').value = h.mode;
   $('v-kind').value = h.buy || 'spin';
+  $('v-hero').value = h.hero || Game.DEFAULT_HERO;
   $('v-gambles').value = h.gambles;
   $('v-gear').value = h.progressBefore.gear;
   $('v-dry').value = h.progressBefore.dry;
@@ -557,6 +691,7 @@ function renderRevealed() {
 // Verify tab
 $('v-mode').innerHTML = Object.entries(Game.MODES).map(([id, m]) => `<option value="${id}">${esc(m.label)}</option>`).join('');
 $('v-kind').innerHTML = '<option value="spin">Paid spin</option>' + Game.BUYS.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+$('v-hero').innerHTML = Game.HEROES.map((h) => `<option value="${h.id}">${h.icon} ${esc(h.name)}</option>`).join('');
 $('v-run').addEventListener('click', () => verify(null));
 
 function verify(expected) {
@@ -570,6 +705,7 @@ function verify(expected) {
     mode: $('v-mode').value,
     buy: kind === 'spin' ? null : kind,
     gambles: Number($('v-gambles').value) || 0,
+    hero: $('v-hero').value,
     progress: { gear: Number($('v-gear').value) || 0, dry: Number($('v-dry').value) || 0 },
   };
   const nonce = Number($('v-nonce').value) || 0;
@@ -579,7 +715,7 @@ function verify(expected) {
   const match = expected ? Math.abs(expected.win - r.totalWin) < 0.005 : null;
   const grid = r.base ? `<div class="mini-grid">${r.base.grid[0].map((_, row) => r.base.grid.map((col) => `<div>${Game.SYMBOLS[col[row]].icon}</div>`).join('')).join('')}</div>` : '';
   const bonus = r.bonus
-    ? `<p>Bonus: <span class="tier-chip t-${Game.TIERS[r.bonus.triggeredTier].id}">${esc(Game.TIERS[r.bonus.triggeredTier].name)}</span>${r.bonus.tier !== r.bonus.triggeredTier ? ` → ${r.bonus.tier === null ? 'forfeited' : esc(Game.TIERS[r.bonus.tier].name)}` : ''}${r.raid ? ` · raid ${xFmt(r.raid.totalX)} over ${r.raid.steps.length} spins` : ''}</p>`
+    ? `<p>Bonus: <span class="tier-chip t-${Game.TIERS[r.bonus.triggeredTier].id}">${esc(Game.TIERS[r.bonus.triggeredTier].name)}</span>${r.bonus.tier !== r.bonus.triggeredTier ? ` → ${r.bonus.tier === null ? 'forfeited' : esc(Game.TIERS[r.bonus.tier].name)}` : ''}${r.raid ? ` · ${heroById(r.raid.hero).icon} raid ${xFmt(r.raid.totalX)} over ${r.raid.steps.length} spins` : ''}</p>`
     : '';
   out.innerHTML = `
     <p>SHA-256 of server seed:</p><code>${hash}</code>
@@ -601,19 +737,32 @@ function renderPaytable() {
     const c = m.tiers[i];
     const startMult = c.startBoss > 0 ? m.bosses[c.startBoss - 1].reward : 1;
     const odds = i < Game.TOP_TIER ? pct(Game.gambleChance(S.mode, i)) : '—';
-    return `<tr><td><span class="tier-chip t-${t.id}">${esc(t.name.replace(' Bonus', ''))}</span></td><td>${c.spins}</td><td>x${startMult}</td><td>${xFmt(m.calibration[i])}</td><td>${odds}</td></tr>`;
+    return `<tr><td><span class="tier-chip t-${t.id}">${esc(t.name.replace(' Bonus', ''))}</span></td><td>${c.spins}</td><td>x${startMult}</td><td>${c.sticky || '—'}</td><td>${xFmt(m.calibration[i])}</td><td>${odds}</td></tr>`;
   }).join('');
-  const bosses = Game.raidBosses(m, Game.TOP_TIER).map((b, i) => `${esc(b.name)} (${b.hp} HP → x${b.reward})${i === m.bosses.length ? ' <em>secret</em>' : ''}`).join(' · ');
+  const allBosses = Game.raidBosses(m, Game.TOP_TIER);
+  const hpRows = allBosses.map((b, i) => `<tr><td>${esc(b.name)}${i === m.bosses.length ? ' <em>secret</em>' : ''}</td>${Game.TIERS.map((_, t) => {
+    const list = Game.raidBosses(m, t);
+    return `<td>${i < m.tiers[t].startBoss || i >= list.length ? '—' : list[i].hp}</td>`;
+  }).join('')}<td>x${b.reward}</td></tr>`).join('');
+  const tierHead = Game.TIERS.map((t) => `<th>${esc(t.name.replace(' Bonus', '').replace('Super Hidden', 'S.Hidden'))}</th>`).join('');
+  const classRows = Game.HEROES.map((h) => `<tr><td>${h.icon} ${esc(h.name)}</td>${Game.TIERS.map((_, t) => `<td>${pct(m.clearRate[h.id][t], 1)}</td>`).join('')}</tr>`).join('');
+  const classInfo = Game.HEROES.map((h) => `<p class="hint"><b>${h.icon} ${esc(h.name)}</b> (${esc(h.style)}): ${esc(h.ability)}</p>`).join('');
   $('paytable').innerHTML = `
     <h3>${esc(m.label)} · max win ${m.maxWinX.toLocaleString()}x</h3>
     <p class="hint">${esc(m.blurb)} Pays are per way, as multiples of your total bet.</p>
     <table><tr><th>Symbol</th><th>3</th><th>4</th><th>5</th></tr>${rows}</table>
     <p class="hint">🚩 Wild on reels 2–4 · 💀 Boss Gate scatter pays ${Object.entries(m.scatterPay).map(([n, x]) => `${n}: ${xFmt(x * m.scale)}`).join(', ')}</p>
     <h3>Bonus tiers</h3>
-    <table><tr><th>Tier</th><th>Spins</th><th>Start</th><th>Avg</th><th>Gamble up</th></tr>${tiers}</table>
+    <table><tr><th>Tier</th><th>Spins</th><th>Start</th><th>Sticky</th><th>Avg</th><th>Gamble up</th></tr>${tiers}</table>
+    <p class="hint">Sticky: in the raid, a wild stays on the reels for that many more spins and hits the boss again each spin.</p>
     <p class="hint">3 / 4 / 5 Boss Gates start Normal / Super / Hidden. A full gear set starts Normal (or raises a scatter bonus one tier). Ascension when any bonus starts: ${Game.ASCEND_CHANCE.map((c, i) => `${Game.TIERS[i].name.replace(' Bonus', '')}→${Game.TIERS[i + 1].name.replace(' Bonus', '')} ${pct(c, 1)}`).join(', ')}.</p>
-    <h3>Raid bosses</h3>
-    <p class="hint">${bosses}. Each wild deals 1 damage; each kill adds ${m.bossKillSpins} spin${m.bossKillSpins > 1 ? 's' : ''}. 2+ Boss Gates in a raid add ${m.retrigger}.</p>
+    <h3>Raid bosses (HP by tier)</h3>
+    <table><tr><th>Boss</th>${tierHead}<th>Kill</th></tr>${hpRows}</table>
+    <p class="hint">Each wild hit deals 1 damage. A kill sets the multiplier shown (the Mage's is 1.5x) and adds ${m.bossKillSpins} spin${m.bossKillSpins > 1 ? 's' : ''}. 2+ Boss Gates in a raid add ${m.retrigger}.</p>
+    <h3>Classes</h3>
+    ${classInfo}
+    <p class="hint">Pick a class before each raid. Raid pays are balanced per class, so every class has the same average win at each tier. They differ in how the raid plays and how often it clears:</p>
+    <table><tr><th>Clears</th>${tierHead}</tr>${classRows}</table>
     <h3>Gear loot</h3>
     <p class="hint">Drop chance ${pct(m.loot.base)} per spin, +${pct(m.loot.perDrySpin, 3)} per spin without a bonus, up to ${pct(m.loot.max)}. ${Game.CACHES.map((c) => `${esc(c.name)} (${c.pieces} pieces) ${pct(c.chance, 0)} of drops`).join(', ')}.</p>
     <p class="hint">Target RTP 98.5–99% for spins and buys. Simulated, not certified.</p>`;
@@ -686,6 +835,11 @@ async function refresh() {
 (async function init() {
   S = await api('/api/state');
   betIndex = Math.min(prefs.get('bet', betIndex), S.bets.length - 1);
+  // The server forgets the class on restart; the browser remembers it.
+  const savedHero = prefs.get('hero', null);
+  if (savedHero && savedHero !== S.hero && !S.pending && Game.HEROES.some((h) => h.id === savedHero)) {
+    try { S = await api('/api/hero', { hero: savedHero }); } catch { /* keep the server's */ }
+  }
   renderGrid(Game.MODES[S.mode].strips.base.map((strip) => strip.slice(0, Game.ROWS)));
   render();
   const tab = prefs.get('tab', 'fair');

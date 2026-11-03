@@ -1,7 +1,8 @@
 // Bulk simulation for balancing. Uses a fast non-crypto RNG: fine for
 // measuring the math, never used for real spins. Gear progress carries
 // from spin to spin like it does for a real player. Simulated players
-// never gamble (the gamble is designed not to change the expected return).
+// never gamble (the gamble is designed not to change the expected return)
+// and take turns with every class (each class has the same average raid win).
 'use strict';
 const Game = require('./game');
 
@@ -41,7 +42,8 @@ function simulate(spins, modeId = Game.DEFAULT_MODE, seed = Date.now()) {
   const setTimes = [];
   let setStart = 0;
   for (let i = 0; i < spins; i++) {
-    const r = Game.playRound(rngFor, { bet: 1, progress, mode: modeId });
+    const hero = Game.HEROES[i % Game.HEROES.length].id;
+    const r = Game.playRound(rngFor, { bet: 1, progress, mode: modeId, hero });
     progress = r.progressAfter;
     totalX += r.totalX;
     sumSq += r.totalX * r.totalX;
@@ -81,13 +83,14 @@ function simulate(spins, modeId = Game.DEFAULT_MODE, seed = Date.now()) {
   };
 }
 
-// Raids of one tier started directly (no base spin), for tier values.
-function simulateTier(raids, modeId, tier, seed = Date.now()) {
-  const mode = Game.getMode(modeId);
+// Raids of one tier and class started directly (no base spin), for tier values.
+// raw: ignore the mode's heroScale (to measure the unscaled value per class).
+function simulateTier(raids, modeId, tier, seed = Date.now(), hero = Game.DEFAULT_HERO, raw = false) {
+  const mode = raw ? { ...Game.getMode(modeId), heroScale: null } : Game.getMode(modeId);
   const rng = fastRng(seed);
   let sum = 0, sumSq = 0, maxX = 0, maxWins = 0, clears = 0;
   for (let i = 0; i < raids; i++) {
-    const r = Game.runRaid(rng, mode, tier, 0);
+    const r = Game.runRaid(rng, mode, tier, 0, false, hero);
     if (r.cleared) clears++;
     sum += r.totalX;
     sumSq += r.totalX * r.totalX;

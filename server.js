@@ -25,6 +25,9 @@ const state = {
   clientSeed: crypto.randomBytes(8).toString('hex'),
   nonce: 0,
   mode: Game.DEFAULT_MODE,
+  // The class used for raids. Picked before each raid (or before a Glory or
+  // Wipe buy, which is priced for it), and remembered between rounds.
+  hero: Game.DEFAULT_HERO,
   progress: Object.fromEntries(Object.keys(Game.MODES).map((m) => [m, { gear: 0, dry: 0 }])),
   // A round whose bonus is waiting for the player to gamble or play.
   pending: null,
@@ -39,6 +42,7 @@ function publicState() {
     clientSeed: state.clientSeed,
     nonce: state.nonce,
     mode: state.mode,
+    hero: state.hero,
     progress: state.progress[state.mode],
     bets: BETS,
     dev: DEV,
@@ -95,7 +99,7 @@ function begin(start, costX, bet) {
 
 function finish() {
   const { nonce, round, rngFor, cost } = state.pending;
-  const done = Game.finishRound(rngFor, round);
+  const done = Game.finishRound(rngFor, round, state.hero);
   state.pending = null;
   state.balance = round2(state.balance + done.totalWin);
   state.history.push({
@@ -108,6 +112,7 @@ function finish() {
     gambles: done.gambles.length,
     progressBefore: done.progressBefore,
     tier: done.bonus ? done.bonus.tier : null,
+    hero: done.raid ? done.raid.hero : null,
     win: done.totalWin,
     x: done.totalX,
     clientSeed: state.clientSeed,
@@ -115,6 +120,18 @@ function finish() {
   });
   if (state.history.length > 500) state.history.shift();
   return { round: done, nonce, done: true, state: publicState() };
+}
+
+// Sets the raid class. Allowed between rounds, or while a bonus waits unless
+// it's Glory or Wipe (that raid was priced for the class it was bought with).
+function setHero(value) {
+  if (value === undefined) return;
+  const hero = Game.HEROES.find((h) => h.id === value);
+  if (!hero) throw httpError(400, 'Unknown class');
+  if (state.pending && state.pending.round.bonus && state.pending.round.bonus.glory && hero.id !== state.hero) {
+    throw httpError(409, 'Glory or Wipe keeps the class it was bought with');
+  }
+  state.hero = hero.id;
 }
 
 function parseBet(value) {
@@ -146,7 +163,9 @@ const api = {
     const mode = state.mode;
     const buy = Game.BUYS.find((b) => b.id === body.buy);
     if (!buy) throw httpError(400, 'Unknown buy');
-    return begin((rngFor) => Game.startBuy(rngFor, bet, state.progress[mode], mode, buy.id), Game.buyPrice(mode, buy.id), bet);
+    setHero(body.hero);
+    const hero = state.hero;
+    return begin((rngFor) => Game.startBuy(rngFor, bet, state.progress[mode], mode, buy.id, hero), Game.buyPrice(mode, buy.id, hero), bet);
   },
 
   'POST /api/bonus/gamble': () => {
@@ -160,8 +179,14 @@ const api = {
     return { gamble: g, round: p.round, nonce: p.nonce, done: false, state: publicState() };
   },
 
-  'POST /api/bonus/play': () => {
+  'POST /api/hero': ({ body }) => {
+    setHero(body.hero);
+    return publicState();
+  },
+
+  'POST /api/bonus/play': ({ body }) => {
     if (!state.pending) throw httpError(409, 'No bonus waiting');
+    setHero(body.hero);
     return finish();
   },
 
@@ -197,7 +222,7 @@ const devApi = {
     return publicState();
   },
 
-  // Next N paid spins in the current mode, assuming no gambles and no buys.
+  // Next N paid spins in the current mode and class, assuming no gambles and no buys.
   'GET /api/dev/preview': ({ query }) => {
     const count = Math.min(Math.max(Number(query.get('count')) || 50, 1), 500);
     const rows = [];
@@ -205,7 +230,7 @@ const devApi = {
     const first = state.nonce + (state.pending ? 0 : 0);
     for (let i = 0; i < count; i++) {
       const nonce = first + i;
-      const r = Game.playRound(Fair.streams(state.serverSeed, state.clientSeed, nonce), { bet: 1, progress, mode: state.mode });
+      const r = Game.playRound(Fair.streams(state.serverSeed, state.clientSeed, nonce), { bet: 1, progress, mode: state.mode, hero: state.hero });
       rows.push({
         nonce, x: r.totalX,
         bonus: r.bonus ? { source: r.bonus.source, tier: r.bonus.tier } : null,

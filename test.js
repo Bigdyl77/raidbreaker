@@ -18,7 +18,7 @@ assert.strictEqual(Fair.hashSeed('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361
 function stepwise(seeds, opts) {
   const rngFor = Fair.streams(...seeds);
   const round = opts.buy
-    ? Game.startBuy(rngFor, opts.bet, opts.progress, opts.mode, opts.buy)
+    ? Game.startBuy(rngFor, opts.bet, opts.progress, opts.mode, opts.buy, opts.hero)
     : Game.startSpin(rngFor, opts.bet, opts.progress, opts.mode);
   round.gambles = [];
   for (let i = 0; i < opts.gambles; i++) {
@@ -28,21 +28,24 @@ function stepwise(seeds, opts) {
     round.bonus = { ...round.bonus, tier: g.to };
     if (!g.won) break;
   }
-  return Game.finishRound(rngFor, round);
+  return Game.finishRound(rngFor, round, opts.hero);
 }
+
+const HERO_IDS = Game.HEROES.map((h) => h.id);
 
 for (const [modeId, mode] of Object.entries(Game.MODES)) {
   let p = { gear: 0, dry: 0 };
   let bonuses = 0;
   for (let n = 0; n < 3000; n++) {
     const seeds = ['seed-a', 'seed-b', n];
-    const opts = { bet: 1, progress: p, mode: modeId, gambles: n % 3 };
+    const opts = { bet: 1, progress: p, mode: modeId, gambles: n % 3, hero: HERO_IDS[n % HERO_IDS.length] };
     const r = Game.playRound(Fair.streams(...seeds), opts);
     assert.deepStrictEqual(r, Game.playRound(Fair.streams(...seeds), opts), `${modeId} replays`);
     assert.deepStrictEqual(r, stepwise(seeds, opts), `${modeId} stepwise matches replay`);
     assert.ok(r.totalX >= 0 && r.totalX <= mode.maxWinX + 1e-9, `${modeId} max win`);
     if (r.loot) r.loot.items.forEach((it) => assert.ok(!((r.progressBefore.gear >> it.slot) & 1), 'loot is always a missing piece'));
     if (r.bonus) bonuses++;
+    if (r.raid) assert.strictEqual(r.raid.hero, opts.hero, 'raid uses the picked class');
     p = r.progressAfter;
   }
   assert.ok(bonuses > 0, `${modeId} triggers bonuses`);
@@ -50,14 +53,44 @@ for (const [modeId, mode] of Object.entries(Game.MODES)) {
   for (const buy of Game.BUYS) {
     for (let n = 0; n < 50; n++) {
       const seeds = ['buy-a', 'buy-b', n];
-      const opts = { bet: 2, progress: { gear: 3, dry: 40 }, mode: modeId, buy: buy.id, gambles: n % 4 };
+      const opts = { bet: 2, progress: { gear: 3, dry: 40 }, mode: modeId, buy: buy.id, gambles: n % 4, hero: HERO_IDS[n % HERO_IDS.length] };
       const r = Game.playRound(Fair.streams(...seeds), opts);
       assert.deepStrictEqual(r, stepwise(seeds, opts), `${modeId} ${buy.id} stepwise matches replay`);
       assert.deepStrictEqual(r.progressAfter, opts.progress, 'buys leave gear alone');
       if (buy.tier !== null) assert.ok(r.bonus.triggeredTier === buy.tier, 'bought tier');
       if (!buy.glory) assert.ok(r.bonus.triggeredTier < Game.TOP_TIER, 'Super Hidden is never bought directly');
-      else assert.ok(r.totalX === 0 || r.totalX === mode.maxWinX, 'Glory or Wipe pays max or nothing');
+      else {
+        assert.ok(r.totalX === 0 || r.totalX === mode.maxWinX, 'Glory or Wipe pays max or nothing');
+        assert.strictEqual(r.bonus.hero, opts.hero, 'Glory or Wipe keeps the class it was priced for');
+        // Picking another class at play time can't change a Glory raid.
+        const rngFor = Fair.streams(...seeds);
+        const round = Game.startBuy(rngFor, opts.bet, opts.progress, modeId, buy.id, opts.hero);
+        round.gambles = [];
+        const other = HERO_IDS[(n + 1) % HERO_IDS.length];
+        if (round.bonus.tier !== null) assert.strictEqual(Game.finishRound(rngFor, round, other).raid.hero, opts.hero, 'Glory class is locked');
+      }
     }
+  }
+
+  // Every class is calibrated for every tier, and raid mechanics hold up.
+  for (const hero of HERO_IDS) {
+    assert.strictEqual(mode.heroScale[hero].length, Game.TIERS.length, `${modeId} ${hero} heroScale`);
+    assert.strictEqual(mode.clearRate[hero].length, Game.TIERS.length, `${modeId} ${hero} clearRate`);
+    assert.ok(Game.buyPrice(modeId, 'glory', hero) >= 1, 'Glory price');
+    for (let tier = 0; tier < Game.TIERS.length; tier++) {
+      const rng = Fair.streams('raid-a', 'raid-b', tier)('raid');
+      const raid = Game.runRaid(rng, mode, tier, 0, false, hero);
+      const sticky = mode.tiers[tier].sticky || 0;
+      raid.steps.forEach((st) => {
+        st.stickyCells.forEach(([r, row]) => assert.strictEqual(st.grid[r][row], 'W', 'sticky cells hold wilds'));
+        if (!sticky) assert.strictEqual(st.stickyCells.length, 0, 'no sticky wilds in tiers without them');
+        assert.strictEqual(st.hits.length, st.stickyCells.length + st.wildCells.length, 'every wild hits');
+      });
+    }
+  }
+  // Same average for every class: buy prices don't depend on the class.
+  for (const buy of Game.BUYS.filter((b) => !b.glory)) {
+    HERO_IDS.forEach((hero) => assert.strictEqual(Game.buyPrice(modeId, buy.id, hero), Game.buyPrice(modeId, buy.id), 'class-free price'));
   }
 
   Object.values(mode.strips.free).concat([mode.strips.base]).forEach((strips) => strips.forEach((strip) => {
