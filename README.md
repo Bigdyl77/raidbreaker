@@ -29,6 +29,7 @@ In the static build the server seed lives in the player's browser, so it's a pla
 - **Gamble**: before a raid, you can gamble for the next tier. A loss forfeits the bonus. The odds equal the ratio of the tiers' values, so gambling doesn't change your expected return. This is deliberate: making the Hidden → Super Hidden step rarer would need a house edge on the gamble, which would lower the real RTP. Super Hidden stays rare through ascension instead.
 - **Gear loot**: rare items attach to symbols on base spins, and a full 6-piece set starts a Normal Bonus. The drop chance climbs during dry streaks, and caches can drop 2–3 pieces at once.
 - **Buys**: Normal, Super, Hidden, Mystery (random tier) and **Glory or Wipe** (random tier, even Super Hidden). In Glory or Wipe, clearing every boss pays the mode's max win and anything less pays nothing.
+- **Autoplay**: 10, 25, 50, 100, or unlimited spins. It stops for a bonus so you can gamble or play, unless you choose "always play the raid". It can also stop when your balance drops by a set amount, or when one round wins more than a set amount.
 
 ## Provably fair
 

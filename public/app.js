@@ -53,6 +53,7 @@ let busy = false;
 let inRaid = false;
 let skipRequested = false;
 let autoLeft = 0;
+let autoStartBalance = 0;
 let speed = prefs.get('speed', 'normal');
 const heroById = (id) => Game.HEROES.find((h) => h.id === id) || Game.getHero(Game.DEFAULT_HERO);
 if (!SPEEDS[speed]) speed = 'normal';
@@ -534,7 +535,8 @@ function decide(resp) {
 }
 
 async function bonusFlow(resp, announce = true) {
-  if (autoLeft > 0) stopAuto();
+  const autoPlay = autoLeft > 0 && autoOnBonus() === 'play';
+  if (autoLeft > 0 && !autoPlay) stopAuto();
   const bonus = resp.round.bonus;
   if (announce) {
     if (bonus.source === 'gear' || bonus.source === 'scatter+gear') await banner('FULLY GEARED!<small>Your set is complete. Into the raid.</small>');
@@ -542,7 +544,7 @@ async function bonusFlow(resp, announce = true) {
       await ceremony('ascend', `${Game.TIERS[bonus.triggeredTier].name} → ${Game.TIERS[bonus.tier].name}`);
     }
   }
-  const final = await decide(resp);
+  const final = autoPlay ? await api('/api/bonus/play', {}) : await decide(resp);
   if (final.round.raid) await playRaid(final.round);
   return final;
 }
@@ -610,16 +612,80 @@ async function run(task) {
   }
 }
 
-function stopAuto() {
-  autoLeft = 0;
+const cents = (n) => Math.round(Number(n) * 100);
+
+function autoOnBonus() {
+  return $('auto-play-bonus').checked ? 'play' : 'stop';
+}
+
+function limitValue(id) {
+  const n = Number($(id).value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return cents(n) / 100;
+}
+
+function spinsFromSelect() {
+  if ($('auto-select').value === 'inf') return Infinity;
+  const n = Number($('auto-select').value);
+  return n > 0 ? n : 10;
+}
+
+function autoReason(round) {
+  const win = limitValue('auto-win');
+  const loss = limitValue('auto-loss');
+  if (round && win > 0 && cents(round.totalWin) > cents(win)) return 'win';
+  if (loss > 0 && cents(autoStartBalance) - cents(S.balance) >= cents(loss)) return 'loss';
+  return null;
+}
+
+function paintAutoButton() {
   const btn = $('auto-btn');
-  if (btn) {
-    btn.textContent = 'Auto';
-    btn.classList.remove('active');
+  const on = autoLeft > 0;
+  const count = Number.isFinite(autoLeft) ? String(autoLeft) : '∞';
+  btn.textContent = on ? `Stop (${count})` : 'Auto';
+  btn.classList.toggle('active', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = on ? 'Stop autoplay' : 'Start autoplay';
+  const custom = autoOnBonus() === 'play' || limitValue('auto-loss') > 0 || limitValue('auto-win') > 0;
+  $('auto-stops-btn').classList.toggle('armed', custom);
+}
+
+function noteAutoStop(reason) {
+  const text = {
+    loss: `Auto stopped · balance down ${money(autoStartBalance - S.balance)}`,
+    win: `Auto stopped · win over ${money(limitValue('auto-win'))}`,
+    funds: 'Auto stopped · not enough for the next bet',
+  }[reason];
+  if (text) $('win-text').insertAdjacentHTML('beforeend', ` <small>${esc(text)}</small>`);
+}
+
+function stopAuto(reason) {
+  const was = autoLeft > 0;
+  autoLeft = 0;
+  paintAutoButton();
+  updateControls();
+  if (was && reason) noteAutoStop(reason);
+}
+
+function continueAuto(round) {
+  if (!(autoLeft > 0) || !S) return;
+  if (Number.isFinite(autoLeft)) autoLeft -= 1;
+  const reason = autoReason(round);
+  if (reason || !(autoLeft > 0)) {
+    stopAuto(reason);
+    return;
   }
+  if (S.balance < S.bets[betIndex]) {
+    stopAuto('funds');
+    return;
+  }
+  paintAutoButton();
+  const gap = speed === 'super' ? 40 : 180;
+  setTimeout(() => { if (autoLeft > 0 && !busy) spin(); }, gap);
 }
 
 async function spin() {
+  let round = null;
   await run(async () => {
     const bet = S.bets[betIndex];
     $('balance').textContent = money(S.balance - bet);
@@ -632,17 +698,10 @@ async function spin() {
     const final = resp.done ? resp : await bonusFlow(resp);
     S = final.state;
     render();
+    round = final.round;
     showResult(final.round);
   });
-  if (autoLeft > 0) {
-    autoLeft--;
-    $('auto-btn').textContent = autoLeft > 0 ? `Stop (${autoLeft})` : 'Auto';
-    if (autoLeft > 0 && S && S.balance >= S.bets[betIndex]) {
-      setTimeout(() => { if (autoLeft > 0 && !busy) spin(); }, 180);
-    } else {
-      stopAuto();
-    }
-  }
+  continueAuto(round);
 }
 
 function buy(buyId) {
@@ -672,6 +731,8 @@ function updateControls() {
   const pending = !!(S && S.pending);
   const bet = S ? S.bets[betIndex] : 0;
   $('spin').disabled = busy || pending || !S || S.balance < bet || !heroChosen;
+  $('auto-btn').disabled = !(autoLeft > 0) && (busy || pending || !S || S.balance < bet || !heroChosen);
+  $('auto-select').disabled = autoLeft > 0;
   $('buy-open').disabled = busy || pending || !S || !heroChosen;
   document.querySelectorAll('#heroes button').forEach((b) => { b.disabled = busy || pending; });
   $('bet-down').disabled = busy || betIndex === 0;
@@ -682,13 +743,50 @@ function updateControls() {
 }
 
 $('spin').addEventListener('click', () => { stopAuto(); spin(); });
+function saveAutoPrefs() {
+  prefs.set('autoOnBonus', autoOnBonus());
+  prefs.set('autoLoss', $('auto-loss').value);
+  prefs.set('autoWin', $('auto-win').value);
+  prefs.set('autoCount', $('auto-select').value);
+  paintAutoButton();
+}
+function loadAutoPrefs() {
+  if (prefs.get('autoOnBonus', 'stop') === 'play') $('auto-play-bonus').checked = true;
+  const loss = prefs.get('autoLoss', '');
+  const win = prefs.get('autoWin', '');
+  if (loss) $('auto-loss').value = loss;
+  if (win) $('auto-win').value = win;
+  const count = String(prefs.get('autoCount', '0'));
+  if ([...$('auto-select').options].some((o) => o.value === count)) $('auto-select').value = count;
+  paintAutoButton();
+}
+loadAutoPrefs();
+$('auto-select').addEventListener('change', saveAutoPrefs);
+$('auto-stop-bonus').addEventListener('change', saveAutoPrefs);
+$('auto-play-bonus').addEventListener('change', saveAutoPrefs);
+$('auto-loss').addEventListener('input', saveAutoPrefs);
+$('auto-win').addEventListener('input', saveAutoPrefs);
+const autoStops = $('auto-stops');
+function setAutoStopsOpen(open) {
+  autoStops.classList.toggle('hidden', !open);
+  $('auto-stops-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+$('auto-stops-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setAutoStopsOpen(autoStops.classList.contains('hidden'));
+});
+document.addEventListener('click', (e) => {
+  if (autoStops.classList.contains('hidden')) return;
+  if (e.target.closest('#auto-stops') || e.target.closest('#auto-stops-btn')) return;
+  setAutoStopsOpen(false);
+});
 $('auto-btn').addEventListener('click', () => {
   if (autoLeft > 0) { stopAuto(); return; }
-  const count = Number($('auto-select').value) || 10;
   if ($('auto-select').value === '0') $('auto-select').value = '10';
-  autoLeft = count;
-  $('auto-btn').classList.add('active');
-  $('auto-btn').textContent = `Stop (${autoLeft})`;
+  autoLeft = spinsFromSelect();
+  autoStartBalance = S.balance;
+  saveAutoPrefs();
+  updateControls();
   if (!busy) spin();
 });
 $('bet-down').addEventListener('click', () => { betIndex = Math.max(0, betIndex - 1); prefs.set('bet', betIndex); render(); });
@@ -697,6 +795,10 @@ $('speed').value = speed;
 $('speed').addEventListener('change', (e) => { speed = e.target.value; prefs.set('speed', speed); });
 $('reset-balance').addEventListener('click', async () => { S = await api('/api/reset-balance', {}); render(); });
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !autoStops.classList.contains('hidden')) {
+    setAutoStopsOpen(false);
+    return;
+  }
   if (e.code !== 'Space' || e.repeat) return;
   if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(document.activeElement.tagName)) return;
   e.preventDefault();
