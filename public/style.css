@@ -1,15 +1,15 @@
 :root {
-  --bg: #08060d;
-  --bg2: #120e1b;
-  --panel: #171222;
-  --line: #33284a;
-  --text: #f1ecf8;
-  --muted: #9e93b5;
-  --gold: #e5ad3b;
-  --gold2: #ffe394;
-  --red: #e63946;
-  --green: #38d388;
-  --cell: #1c1629;
+  --bg: #070506;
+  --bg2: #120c0e;
+  --panel: #161014;
+  --line: #3a2a22;
+  --text: #f6efe4;
+  --muted: #b3a394;
+  --gold: #d4a24a;
+  --gold2: #ffe7a3;
+  --red: #e11d48;
+  --green: #34d399;
+  --cell: #1a1214;
   --radius: 10px;
 }
 
@@ -17,7 +17,7 @@
 body {
   margin: 0;
   background:
-    radial-gradient(ellipse at 50% 0%, #2a183b 0%, rgba(13, 9, 22, 0.92) 55%, var(--bg) 100%) fixed,
+    radial-gradient(ellipse at 50% -10%, #3a141c 0%, rgba(12, 6, 8, 0.2) 42%, var(--bg) 70%) fixed,
     var(--bg);
   color: var(--text);
   font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
@@ -153,8 +153,10 @@ input, select {
 #arena-canvas {
   display: block;
   width: 100%;
-  height: 205px;
-  cursor: pointer;
+  height: auto;
+  aspect-ratio: 960 / 360;
+  cursor: crosshair;
+  background: #070306;
 }
 .arena-hint {
   position: absolute;
@@ -178,12 +180,12 @@ input, select {
 .raid-boss-head { display: inline-flex; align-items: center; gap: 6px; }
 .boss-portrait { display: inline-flex; width: 28px; height: 28px; vertical-align: middle; }
 .boss-portrait svg { width: 100%; height: 100%; filter: drop-shadow(0 0 5px rgba(230, 57, 70, 0.65)); }
-.boss-name { font-family: Georgia, serif; font-size: 17px; color: #ffccd2; font-weight: 700; }
+.boss-name { font-family: Georgia, serif; font-size: 22px; color: #ffe4e6; font-weight: 700; letter-spacing: 0.4px; }
 .raid-stats { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
 .raid-stats b { color: var(--gold2); }
-.hp-track { position: relative; height: 18px; background: #12070a; border-radius: 9px; overflow: hidden; border: 1px solid #591e2c; }
+.hp-track { position: relative; height: 22px; background: #12070a; border-radius: 4px; overflow: hidden; border: 1px solid #7f1d1d; box-shadow: inset 0 0 8px #000; }
 .hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #9e1928, #ff3b4e); transition: width 0.3s ease; }
-.hp-text { position: absolute; inset: 0; text-align: center; font-size: 12px; line-height: 17px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+.hp-text { position: absolute; inset: 0; text-align: center; font-size: 12px; line-height: 21px; font-weight: 700; text-shadow: 0 1px 2px #000; }
 .boss-pips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .pip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
 .pip svg { width: 14px; height: 14px; }
@@ -209,11 +211,11 @@ input, select {
 .reel { display: grid; grid-template-rows: repeat(4, 1fr); gap: 8px; }
 .cell {
   position: relative;
-  aspect-ratio: 1 / 0.84;
-  border-radius: 10px;
+  aspect-ratio: 1 / 0.92;
+  border-radius: 14px;
   background:
-    radial-gradient(circle at 50% 36%, #2f2347 0%, #171124 78%, #100b1a 100%);
-  border: 1px solid #3d2f59;
+    radial-gradient(circle at 50% 36%, #3a2428 0%, #140c0e 72%, #0a0708 100%);
+  border: 2px solid #8a6a32;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
@@ -511,7 +513,6 @@ th { color: var(--muted); font-weight: 600; }
   .controls .buy-btn { margin-left: 0; }
   .controls .spin { flex: 1; }
   .gear-slot { font-size: 9px; }
-  #arena-canvas { height: 165px; }
 }
 .pip.secret { border-style: dashed; color: #ffe08a; }
 
@@ -658,3 +659,53 @@ th { color: var(--muted); font-weight: 600; }
 .hp-track.shake { animation: shake 0.35s ease; }
 @keyframes shake { 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 .banner small.near { color: #ffb3b3; font-style: italic; }
+
+.decision-boss {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 4px;
+  filter: drop-shadow(0 0 16px rgba(225, 29, 72, 0.65));
+}
+.decision-boss svg { width: 100%; height: 100%; display: block; }
+
+.ceremony {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(20, 6, 10, 0.2), rgba(0, 0, 0, 0.72));
+}
+.ceremony-card { text-align: center; padding: 18px 28px; }
+.ceremony-kicker {
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--gold2);
+  font-size: 13px;
+}
+.ceremony-title {
+  font-family: Georgia, serif;
+  font-size: clamp(40px, 8vw, 84px);
+  line-height: 0.95;
+  color: #fff6d8;
+  text-shadow: 0 0 24px rgba(212, 162, 74, 0.85), 0 8px 30px #000;
+}
+.ceremony-sub { margin-top: 8px; font-size: 18px; color: var(--text); }
+.ceremony.tier-huge .ceremony-title { color: #ffd0a8; text-shadow: 0 0 28px rgba(251, 146, 60, 0.9); }
+.ceremony.tier-epic .ceremony-title { color: #ffe38a; text-shadow: 0 0 36px rgba(250, 204, 21, 0.95), 0 0 80px rgba(127, 29, 29, 0.8); }
+.ceremony.tier-ascend .ceremony-title { color: #f3e8ff; text-shadow: 0 0 28px rgba(192, 132, 252, 0.9); }
+
+@media (max-width: 720px) {
+  .app { padding: 8px; gap: 10px; }
+  .title h1 { font-size: 22px; letter-spacing: 2px; }
+  .class-head { align-items: flex-start; }
+  .stage-tools { margin-left: 0; }
+  .raid-stats { gap: 8px; }
+  .controls { gap: 8px; padding: 8px; }
+  .spin { padding: 10px 18px; }
+  .hero-pick { grid-template-columns: repeat(3, 1fr); }
+  .class-bar .hero-pick { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .hero-card { min-width: 0; overflow: hidden; }
+}

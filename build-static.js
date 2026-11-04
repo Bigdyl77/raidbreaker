@@ -9,7 +9,9 @@ const out = path.join(__dirname, 'dist');
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'shared'), { recursive: true });
 
-for (const f of ['app.js', 'style.css', 'local.js']) fs.copyFileSync(path.join(__dirname, 'public', f), path.join(out, f));
+for (const f of ['app.js', 'style.css', 'local.js', 'art.js', 'sfx.js', 'stage.js']) {
+  fs.copyFileSync(path.join(__dirname, 'public', f), path.join(out, f));
+}
 for (const f of ['fair.js', 'game.js', 'house.js']) fs.copyFileSync(path.join(__dirname, 'shared', f), path.join(out, 'shared', f));
 
 const appTag = '<script src="app.js"></script>';
