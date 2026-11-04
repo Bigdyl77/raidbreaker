@@ -22,9 +22,9 @@
           <span id="class-ability" class="hint"></span>
           <div class="stage-tools">
             <div class="style-picker" role="group" aria-label="Art Style">
-              <button type="button" class="style-btn active" data-style="gothic" title="Chiseled Gothic Dark-Fantasy Art">🗡️ Gothic</button>
-              <button type="button" class="style-btn" data-style="pixel" title="16-Bit Retro Pixel Dungeon Art">👾 16-Bit Pixel</button>
-              <button type="button" class="style-btn" data-style="compact" title="Hide stage canvas">📐 Compact</button>
+              <button type="button" class="style-btn active" data-style="gothic" title="Detailed raid hall">Raid</button>
+              <button type="button" class="style-btn" data-style="pixel" title="Chunky raid hall">Pixel</button>
+              <button type="button" class="style-btn" data-style="compact" title="Hide the raid hall">Hide</button>
             </div>
             <div class="emote-bar" role="group" aria-label="Character Actions">
               <button type="button" id="act-attack" class="emote-btn" title="Trigger weapon attack">⚡ Strike</button>
@@ -35,8 +35,8 @@
         </div>
         <div id="heroes" class="hero-pick compact" role="radiogroup" aria-label="Class"></div>
         <div id="arena-canvas-wrap" class="arena-canvas-wrap">
-          <canvas id="arena-canvas" width="880" height="210"></canvas>
-          <div class="arena-hint">Click your Champion or the Boss Gate to interact · 6/6 Gear equips visibly onto your Champion</div>
+          <canvas id="arena-canvas" width="960" height="360"></canvas>
+          <div class="arena-hint">Click your champion or the boss. Gear you own shows on the champion.</div>
         </div>
       </section>
 
@@ -70,6 +70,7 @@
 
         <div id="decision" class="overlay hidden" role="dialog" aria-labelledby="decision-title">
           <div class="overlay-card">
+            <div id="decision-boss" class="decision-boss"></div>
             <h2 id="decision-title">Bonus!</h2>
             <p id="decision-sub" class="hint"></p>
             <ol id="tier-ladder" class="tier-ladder"></ol>
@@ -237,8 +238,19 @@
     </div>
   </div>
 
+  <div id="ceremony" class="ceremony hidden" aria-live="assertive">
+    <div class="ceremony-card">
+      <div id="ceremony-kicker" class="ceremony-kicker"></div>
+      <div id="ceremony-title" class="ceremony-title"></div>
+      <div id="ceremony-sub" class="ceremony-sub"></div>
+    </div>
+  </div>
+
   <script src="shared/fair.js"></script>
   <script src="shared/game.js"></script>
+  <script src="art.js"></script>
+  <script src="sfx.js"></script>
+  <script src="stage.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
