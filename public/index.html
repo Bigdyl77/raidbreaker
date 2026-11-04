@@ -113,8 +113,21 @@
               <option value="25">25</option>
               <option value="50">50</option>
               <option value="100">100</option>
+              <option value="inf">∞</option>
             </select>
-            <button id="auto-btn" class="auto-btn" type="button">Auto</button>
+            <button id="auto-btn" class="auto-btn" type="button" aria-pressed="false">Auto</button>
+            <button id="auto-stops-btn" class="small-btn" type="button" aria-expanded="false" aria-controls="auto-stops">Stops</button>
+          </div>
+          <div id="auto-stops" class="auto-stops hidden">
+            <p class="hint">A bonus waits for you unless you always play the raid. Limits are in currency. Leave one blank to ignore it.</p>
+            <div class="auto-choice" role="radiogroup" aria-label="When a bonus hits">
+              <label class="check"><input type="radio" name="auto-bonus" id="auto-stop-bonus" value="stop" checked> Stop and choose</label>
+              <label class="check"><input type="radio" name="auto-bonus" id="auto-play-bonus" value="play"> Always play the raid</label>
+            </div>
+            <label class="auto-limit" for="auto-loss">Stop if balance drops by</label>
+            <input id="auto-loss" type="number" min="0" step="0.01" inputmode="decimal" placeholder="off">
+            <label class="auto-limit" for="auto-win">Stop on a win over</label>
+            <input id="auto-win" type="number" min="0" step="0.01" inputmode="decimal" placeholder="off">
           </div>
         </div>
         <button id="buy-open" class="buy-btn" type="button">Buy bonus</button>
