@@ -414,6 +414,10 @@ th { color: var(--muted); font-weight: 600; }
 
 /* Modes */
 .modes { display: flex; gap: 4px; margin-left: auto; }
+.account-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.account-chip b { color: var(--gold2); font-weight: 600; }
+.account-chip button { padding: 4px 8px; font-size: 12px; }
+.gate-error { color: #fb7185; min-height: 1.2em; margin: 0; }
 .modes button { padding: 5px 12px; font-size: 13px; border-radius: 99px; }
 .modes button.active { border-color: var(--gold); color: var(--gold2); background: #3d2c12; }
 .mode-blurb { margin-top: -4px; }
