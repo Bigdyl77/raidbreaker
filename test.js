@@ -128,4 +128,151 @@ for (const [modeId, mode] of Object.entries(Game.MODES)) {
   }
   assert.ok(checked >= 5, 'restore test hit pending bonuses');
 }
-console.log('All tests passed');
+
+// Accounts: progress survives a new process, and the active server seed is
+// encrypted at rest. Passwords and seeds are never logged.
+{
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { createAccounts, createLimiter, SCRYPT_N } = require('./accounts');
+  const { createServer } = require('./server');
+  const accountsSrc = fs.readFileSync(path.join(__dirname, 'accounts.js'), 'utf8');
+  const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.strictEqual(SCRYPT_N, 16384, 'password hashing cost');
+  assert.ok(!/console\./.test(accountsSrc), 'accounts.js does not log');
+  assert.ok(!/console\.[a-z]+\([^)]*(password|serverSeed)/.test(serverSrc), 'server logs omit secrets');
+
+  const limit = createLimiter({ max: 2, windowMs: 60_000 });
+  limit('ip');
+  limit('ip');
+  assert.throws(() => limit('ip'), /Too many attempts/);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-acct-'));
+  let n = 0;
+  const newSeed = () => crypto.createHash('sha256').update('acct-' + n++).digest('hex');
+  const opts = { dir, scryptN: 1024, newSeed, dev: false };
+  const accounts = createAccounts(opts);
+  assert.throws(() => accounts.register({ username: 'ab', password: 'password-1' }), /3-20/);
+  assert.throws(() => accounts.register({ username: 'ada', password: 'short' }), /8-128/);
+  const ada = accounts.register({ username: 'Ada', password: 'password-1' });
+  assert.strictEqual(ada.username, 'Ada');
+  assert.throws(() => accounts.register({ username: 'ada', password: 'password-2' }), /taken/);
+  assert.throws(() => accounts.login({ username: 'Ada', password: 'wrong-password' }), /Wrong name or password/);
+  assert.throws(() => accounts.login({ username: 'nobody', password: 'password-1' }), /Wrong name or password/);
+
+  const other = accounts.register({ username: '__proto__', password: 'password-2' });
+  other.house.handlerFor('POST /api/spin')({ body: { bet: 1 } });
+  accounts.save(other);
+  assert.notStrictEqual(other.house.state.balance, ada.house.state.balance, 'accounts do not share a balance');
+
+  const again = accounts.login({ username: 'ADA', password: 'password-1' });
+  assert.strictEqual(again.house, ada.house, 'a second sign-in shares the live save');
+  assert.strictEqual(again.username, 'Ada');
+
+  for (let i = 0; i < 2500 && !ada.house.state.pending; i++) {
+    ada.house.handlerFor('POST /api/spin')({ body: { bet: 1 } });
+  }
+  assert.ok(ada.house.state.pending, 'found a bonus to save');
+  accounts.save(ada);
+  const seed = ada.house.state.serverSeed;
+  const snap = ada.house.snapshot();
+  const onDisk = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  assert.ok(!onDisk.includes(seed), 'active seed is not stored in the clear');
+  assert.ok(!onDisk.includes('password-1'), 'password is not stored');
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue;
+    assert.strictEqual(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600, file);
+  }
+  assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700);
+
+  accounts.logout(ada.token);
+  accounts.logout(again.token);
+  const reloaded = createAccounts({ ...opts, newSeed: () => { throw new Error('seed rotated'); } });
+  const back = reloaded.login({ username: 'ada', password: 'password-1' });
+  assert.strictEqual(back.house.state.serverSeed, seed, 'the same seed unlocks');
+  assert.deepStrictEqual(back.house.snapshot(), snap, 'pending round restored');
+  const play = (house) => {
+    try { house.handlerFor('POST /api/bonus/gamble')({}); } catch { /* top tier */ }
+    return house.state.pending ? house.handlerFor('POST /api/bonus/play')({}) : null;
+  };
+  const left = play(ada.house);
+  const right = play(back.house);
+  assert.deepStrictEqual(right, left, 'restored account finishes the bonus the same way');
+
+  // A revealed seed is public. The seed that replaces it stays encrypted.
+  const plain = accounts.register({ username: 'Bea', password: 'password-3' });
+  const first = plain.house.handlerFor('POST /api/spin')({ body: { bet: 1 } });
+  if (!first.done) plain.house.handlerFor('POST /api/bonus/play')({});
+  const revealed = plain.house.state.serverSeed;
+  plain.house.handlerFor('POST /api/rotate')({});
+  accounts.save(plain);
+  const after = fs.readFileSync(path.join(dir, `${plain.id}.json`), 'utf8');
+  assert.ok(after.includes(revealed), 'a revealed seed is kept for verification');
+  assert.ok(!after.includes(plain.house.state.serverSeed), 'the new active seed is encrypted');
+
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  async function call(port, pathname, { body, cookie } = {}) {
+    const res = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(cookie ? { cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json();
+    const set = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+    const line = set[0] || res.headers.get('set-cookie') || '';
+    return { status: res.status, data, cookie: line.split(';')[0] };
+  }
+
+  (async () => {
+    const httpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-http-'));
+    const devDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-dev-'));
+    const listen = (server) => new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
+    const close = (server) => new Promise((resolve) => server.close(resolve));
+    const server = createServer({ dev: false, dataDir: httpDir, scryptN: 1024 });
+    const port = await listen(server);
+    const denied = await call(port, '/api/state');
+    assert.strictEqual(denied.status, 401, 'spins require a sign-in');
+    const created = await call(port, '/api/register', { body: { username: 'Cara', password: 'password-4' } });
+    assert.strictEqual((await call(port, '/api/dev/seed', { cookie: created.cookie })).status, 404, 'dev seed stays off');
+    assert.strictEqual(created.status, 200);
+    assert.strictEqual(created.data.account, 'Cara');
+    assert.ok(created.cookie.startsWith('rb='), 'session cookie');
+    const spun = await call(port, '/api/spin', { body: { bet: 1 }, cookie: created.cookie });
+    assert.strictEqual(spun.status, 200);
+    assert.ok(spun.data.state.balance < created.data.balance);
+    const hash = spun.data.state.serverSeedHash;
+    const balance = spun.data.state.balance;
+    await close(server);
+
+    const restarted = createServer({ dev: false, dataDir: httpDir, scryptN: 1024 });
+    const port2 = await listen(restarted);
+    const stale = await call(port2, '/api/state', { cookie: created.cookie });
+    assert.strictEqual(stale.status, 401, 'a restart drops the session');
+    const signed = await call(port2, '/api/login', { body: { username: 'cara', password: 'password-4' } });
+    assert.strictEqual(signed.data.balance, balance, 'balance survived the restart');
+    assert.strictEqual(signed.data.serverSeedHash, hash, 'seed pair survived the restart');
+    await call(port2, '/api/logout', { body: {}, cookie: signed.cookie });
+    assert.strictEqual((await call(port2, '/api/state', { cookie: signed.cookie })).status, 401);
+    await close(restarted);
+
+    const devServer = createServer({ dev: true, dataDir: devDir, scryptN: 1024 });
+    const devPort = await listen(devServer);
+    const devUser = await call(devPort, '/api/register', { body: { username: 'Dev', password: 'password-5' } });
+    const leaked = await call(devPort, '/api/dev/seed', { cookie: devUser.cookie });
+    assert.strictEqual(leaked.status, 200);
+    const devFiles = fs.readdirSync(devDir).map((f) => fs.readFileSync(path.join(devDir, f))).join('\n');
+    assert.ok(!devFiles.includes(leaked.data.serverSeed), 'dev mode still encrypts the seed');
+    await close(devServer);
+    fs.rmSync(httpDir, { recursive: true, force: true });
+    fs.rmSync(devDir, { recursive: true, force: true });
+    console.log('All tests passed');
+  })().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

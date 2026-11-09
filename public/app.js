@@ -99,7 +99,11 @@ async function api(path, body) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) {
+    const err = new Error(data.error || 'Request failed');
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -620,6 +624,7 @@ function stopAuto() {
 }
 
 async function spin() {
+  if (!S) return;
   await run(async () => {
     const bet = S.bets[betIndex];
     $('balance').textContent = money(S.balance - bet);
@@ -673,12 +678,13 @@ function updateControls() {
   const bet = S ? S.bets[betIndex] : 0;
   $('spin').disabled = busy || pending || !S || S.balance < bet || !heroChosen;
   $('buy-open').disabled = busy || pending || !S || !heroChosen;
-  document.querySelectorAll('#heroes button').forEach((b) => { b.disabled = busy || pending; });
-  $('bet-down').disabled = busy || betIndex === 0;
+  document.querySelectorAll('#heroes button').forEach((b) => { b.disabled = busy || pending || !S; });
+  $('bet-down').disabled = busy || !S || betIndex === 0;
   $('bet-up').disabled = busy || !S || betIndex === S.bets.length - 1;
-  document.querySelectorAll('#modes button').forEach((b) => { b.disabled = busy || pending; });
-  $('rotate').disabled = busy || pending;
-  $('save-client-seed').disabled = busy || pending;
+  document.querySelectorAll('#modes button').forEach((b) => { b.disabled = busy || pending || !S; });
+  $('rotate').disabled = busy || pending || !S;
+  $('save-client-seed').disabled = busy || pending || !S;
+  if ($('logout')) $('logout').disabled = busy || !S;
 }
 
 $('spin').addEventListener('click', () => { stopAuto(); spin(); });
@@ -1032,6 +1038,11 @@ function render() {
   $('class-name').innerHTML = `${hero.icon} ${esc(hero.name)}`;
   $('class-ability').textContent = hero.ability;
   $('dev-tab').classList.toggle('hidden', !S.dev);
+  const chip = $('account-chip');
+  if (chip) {
+    chip.classList.toggle('hidden', !S.account);
+    if (S.account) $('account-name').textContent = S.account;
+  }
   renderGear(S.progress);
   renderHistory();
   renderRevealed();
@@ -1041,17 +1052,45 @@ function render() {
 }
 
 async function refresh() {
-  S = await api('/api/state');
+  try {
+    S = await api('/api/state');
+  } catch (e) {
+    if (e.status === 401) { showGate(); return; }
+    throw e;
+  }
   render();
 }
 
-(async function init() {
-  S = await api('/api/state');
+function showGate(message) {
+  stopAuto();
+  S = null;
+  const gate = $('account-gate');
+  if (!gate) return;
+  gate.classList.remove('hidden');
+  $('account-error').textContent = message || '';
+  $('account-password').value = '';
+  updateControls();
+}
+
+function hideGate() {
+  const gate = $('account-gate');
+  if (!gate) return;
+  gate.classList.add('hidden');
+  $('account-error').textContent = '';
+  $('account-password').value = '';
+}
+
+async function enter(state) {
+  stopAuto();
+  S = state;
   betIndex = Math.min(prefs.get('bet', betIndex), S.bets.length - 1);
+  // The static build has one save per browser, so a saved class can be applied.
+  // An account already has its own class.
   const savedHero = prefs.get('hero', null);
-  if (savedHero && savedHero !== S.hero && !S.pending && Game.HEROES.some((h) => h.id === savedHero)) {
+  if (!S.account && savedHero && savedHero !== S.hero && !S.pending && Game.HEROES.some((h) => h.id === savedHero)) {
     try { S = await api('/api/hero', { hero: savedHero }); } catch { /* keep the server's */ }
   }
+  hideGate();
   renderGrid(Game.MODES[S.mode].strips.base.map((strip) => strip.slice(0, Game.ROWS)));
   render();
   const tab = prefs.get('tab', 'fair');
@@ -1067,4 +1106,41 @@ async function refresh() {
     });
   }
   if (!heroChosen) openClassModal();
+}
+
+async function signIn(path) {
+  const buttons = [$('account-login'), $('account-register')];
+  buttons.forEach((b) => { b.disabled = true; });
+  $('account-error').textContent = '';
+  try {
+    const state = await api(path, {
+      username: $('account-name-input').value,
+      password: $('account-password').value,
+    });
+    $('account-password').value = '';
+    await enter(state);
+  } catch (e) {
+    $('account-error').textContent = e.message;
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+$('account-form').addEventListener('submit', (e) => { e.preventDefault(); signIn('/api/login'); });
+$('account-register').addEventListener('click', () => signIn('/api/register'));
+$('logout').addEventListener('click', async () => {
+  if (busy || !S) return;
+  stopAuto();
+  try { await api('/api/logout', {}); } catch { /* leave the screen anyway */ }
+  showGate();
+});
+
+(async function init() {
+  try {
+    await enter(await api('/api/state'));
+  } catch (e) {
+    if (!window.LocalApi && e.status === 401) { showGate(); return; }
+    if (!window.LocalApi) { showGate(e.message); return; }
+    throw e;
+  }
 })();

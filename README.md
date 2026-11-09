@@ -8,6 +8,12 @@ npm run dev    # same, plus the Dev panel (exposes the active server seed)
 npm test
 ```
 
+## Accounts
+
+`npm start` keeps a separate save for each player in `data/` (not committed). Sign in from the window on the page. A restart keeps that player's balance, gear, history and seed pair. The active server seed is encrypted with a key that only the password can unwrap, and the server does not log the seed or the password. Login and account creation are rate limited. `DATA_DIR` picks a different folder. `--dev` still shows the active seed to the signed-in player.
+
+The static build has no accounts. It keeps one save in that browser, and the seed lives in the page.
+
 ## Sharing it (static build)
 
 `node build-static.js` writes a server-free copy to `dist/`: the game runs in the browser and saves each player's balance in their own browser, so it can go on any static host.
@@ -54,4 +60,4 @@ After changing a mode's raid math, run `calibrate.js`, paste in `heroScale` and 
 
 ## Not production
 
-The server keeps one player's state in memory. A real deployment would need accounts, persistent storage, an encrypted seed store, rate limiting, and a gambling license wherever real money is involved.
+Accounts and an encrypted seed store are in place for the Node server, and login is rate limited. The other routes are not. A public deployment still needs that, and real money needs a gambling license wherever it is offered. This build is play money.

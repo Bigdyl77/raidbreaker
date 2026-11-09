@@ -9,10 +9,10 @@ The symbols are emoji placeholders. Replace them with original art (no Blizzard 
 Reel spin and stop, wins scaled by size, loot drop, boss hit and kill, gamble win and loss, ascension, max win. Needs a mute toggle (saved per player) and should respect the speed setting: shorter or no sounds on Super Turbo.
 
 ## 3. Autoplay
-A number of spins (10 / 25 / 50 / 100 / ∞) with stop conditions: on any bonus, if balance drops by X, or on a single win over X. Bonuses should stop autoplay and wait for the gamble-or-play choice unless the player opts into "always play bonus".
+A counter for 10 / 25 / 50 / 100 spins is in, and a bonus stops it and waits for the gamble-or-play choice. Still to add: unlimited spins, an option to always play the bonus, and stops when the balance drops by X or one win is over X.
 
 ## 4. Accounts and saved progress
-The server keeps one player's state in memory, so a restart resets balance, gear and history. Add player accounts and persistent storage (balance, per-mode gear, seed pairs, history), with the active server seed encrypted at rest and never logged.
+Done on the Node server. Each player signs in with a name and password. Balance, per-mode gear, seed pairs and history are stored under `data/` and survive a restart. The active server seed is encrypted with a key wrapped by the password, so a copy of the files does not reveal it, and the server never logs the seed or the password. Login and account creation are rate limited. The static build is still one save per browser, with the seed in the page.
 
 ## Later
 - Big-win celebrations (tiers at 20x / 100x / 1000x) and a raid-clear animation.

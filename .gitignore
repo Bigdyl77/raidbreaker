@@ -3,3 +3,4 @@ sim-*.txt
 *.log
 .DS_Store
 dist/
+data/

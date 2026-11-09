@@ -13,6 +13,7 @@
         <h1>RAIDBREAKER</h1>
         <div id="modes" class="modes" role="radiogroup" aria-label="Volatility"></div>
         <button id="sound-toggle" class="icon-btn" type="button" title="Toggle sound effects" aria-label="Toggle sound effects">🔊 Sound</button>
+        <span id="account-chip" class="account-chip hidden"><b id="account-name"></b><button id="logout" type="button">Log out</button></span>
       </header>
       <p id="mode-blurb" class="hint mode-blurb"></p>
 
@@ -236,6 +237,22 @@
         <button id="skip-confirm" class="play-btn" type="button">Skip</button>
       </div>
     </div>
+  </div>
+
+  <div id="account-gate" class="modal hidden" role="dialog" aria-labelledby="account-title">
+    <form id="account-form" class="modal-card">
+      <h2 id="account-title">Sign in</h2>
+      <p class="hint">Play money, saved for your name on this server. The secret seed is encrypted and is never written in the clear.</p>
+      <label for="account-name-input">Name</label>
+      <input id="account-name-input" name="username" autocomplete="username" maxlength="20" spellcheck="false" required>
+      <label for="account-password">Password</label>
+      <input id="account-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+      <p id="account-error" class="gate-error" role="alert"></p>
+      <div class="overlay-actions">
+        <button id="account-login" class="play-btn" type="submit">Sign in</button>
+        <button id="account-register" type="button">Create account</button>
+      </div>
+    </form>
   </div>
 
   <div id="ceremony" class="ceremony hidden" aria-live="assertive">
