@@ -42,9 +42,9 @@ const bossSvg = (name) => RaidArt.svg('boss:' + name, BOSS_PORTRAITS[name] || BO
 const SFX = RaidSfx.create({ prefs, getSpeed: () => speed });
 
 const SPEEDS = {
-  normal: { spinMin: 650, stagger: 140, cycle: 70, fsPause: 650, winHold: 900, banner: 1400, teaser: 700, pop: 700 },
-  turbo: { spinMin: 220, stagger: 50, cycle: 45, fsPause: 200, winHold: 320, banner: 650, teaser: 300, pop: 350 },
-  super: { spinMin: 0, stagger: 0, cycle: 40, fsPause: 35, winHold: 60, banner: 260, teaser: 0, pop: 0 },
+  normal: { spinMin: 650, stagger: 140, cycle: 70, fsPause: 650, winHold: 900, banner: 1400, teaser: 700, pop: 700, beam: 280, beamGap: 110, chest: 1150 },
+  turbo: { spinMin: 220, stagger: 50, cycle: 45, fsPause: 200, winHold: 320, banner: 650, teaser: 300, pop: 350, beam: 150, beamGap: 60, chest: 520 },
+  super: { spinMin: 0, stagger: 0, cycle: 40, fsPause: 35, winHold: 60, banner: 260, teaser: 0, pop: 0, beam: 0, beamGap: 0, chest: 0 },
 };
 
 let S = null; // latest server state
@@ -160,6 +160,9 @@ function renderGrid(grid, landed = false) {
 function clearMarks() {
   board.classList.remove('has-win');
   board.querySelectorAll('.loot-badge, .dmg-pop').forEach((b) => b.remove());
+  const layer = $('hit-layer');
+  if (layer) layer.querySelectorAll('path, circle, text').forEach((n) => n.remove());
+  setTally('');
 }
 
 function markCells(list, cls) {
@@ -240,6 +243,111 @@ function renderGear(progress, newSlots = []) {
 
 /* ---------- Raid bar ---------- */
 
+const HEART_PATH = 'M12 21s-7-4.4-9.5-8.5C.6 9.2 2 5.5 5.4 4.6 7.6 4 9.4 5 12 7.4 14.6 5 16.4 4 18.6 4.6 22 5.5 23.4 9.2 21.5 12.5 19 16.6 12 21 12 21z';
+let heartsFresh = false;
+
+function setTally(text, hot) {
+  const el = $('hit-tally');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('hot', !!hot);
+}
+
+function setHpBar(hp, max) {
+  const width = `${max ? (Math.max(0, hp) / max) * 100 : 0}%`;
+  $('hp-fill').style.width = width;
+  $('hp-lag').style.width = width;
+}
+
+function paintHearts(bossName, max, hp, lost) {
+  const el = $('hearts');
+  if (!el) return;
+  if (!max || max < 0) {
+    el.innerHTML = '';
+    el.dataset.key = '';
+    return;
+  }
+  const cap = max > 18 ? 12 : max;
+  const key = `${bossName}:${max}`;
+  if (el.dataset.key !== key || el.children.length !== cap) {
+    el.dataset.key = key;
+    el.innerHTML = Array.from({ length: cap }, () => (
+      `<span class="heart-slot"><svg viewBox="0 0 24 24"><path d="${HEART_PATH}"/></svg></span>`
+    )).join('');
+  }
+  const unit = max / cap;
+  const before = hp + lost;
+  [...el.children].forEach((slot, i) => {
+    const start = i * unit;
+    const now = Math.max(0, Math.min(1, (hp - start) / unit));
+    const was = Math.max(0, Math.min(1, (before - start) / unit));
+    const emptied = lost > 0 && was > 0.45 && now <= 0.04;
+    const nicked = !emptied && lost > 0 && was > 0.04 && now < was - 0.02;
+    if (emptied) {
+      slot.classList.remove('nick');
+      slot.classList.remove('break');
+      void slot.offsetWidth;
+      slot.classList.add('break');
+    } else if (nicked) {
+      slot.classList.remove('nick');
+      void slot.offsetWidth;
+      slot.classList.add('nick');
+    }
+    const shown = emptied ? Math.max(now, was) : now;
+    const path = slot.querySelector('path');
+    path.setAttribute('fill', shown > 0.04 ? ((emptied || nicked) ? '#fde68a' : '#ff3b4e') : '#4a2030');
+    path.setAttribute('opacity', shown > 0.98 ? '1' : shown > 0.04 ? String(0.45 + shown * 0.55) : '0.7');
+  });
+  el.dataset.hp = String(hp);
+  el.dataset.boss = bossName;
+}
+
+function renderPips(raid, bossIndex) {
+  $('boss-pips').innerHTML = raid.bosses.map((b, i) => {
+    const cls = i < bossIndex ? 'dead' : i === bossIndex ? 'current' : '';
+    const secret = i === Game.MODES[S.mode].bosses.length ? ' secret' : '';
+    return `<span class="pip ${cls}${secret}">${bossSvg(b.name)} ${esc(b.name)} · ${b.hp} HP · x${b.reward}</span>`;
+  }).join('');
+}
+
+function showLife(raid, index, hp, lost, keepHearts) {
+  const list = raid.bosses;
+  const cleared = index >= list.length;
+  const boss = list[Math.min(index, list.length - 1)];
+  const name = cleared ? '' : boss.name;
+  if (cleared) {
+    $('boss-name').textContent = 'Raid cleared!';
+    setHpBar(0, 1);
+    $('hp-text').textContent = 'All bosses down';
+    paintHearts('', 0, 0, 0);
+    Arena.setBoss(null, 0, 1);
+  } else {
+    if ($('boss-name').textContent !== boss.name) {
+      $('boss-portrait').innerHTML = bossSvg(boss.name);
+      $('boss-name').textContent = boss.name;
+    }
+    const shown = Math.max(0, hp);
+    setHpBar(shown, boss.hp);
+    $('hp-text').textContent = `${shown} / ${boss.hp} HP`;
+    const same = keepHearts && lost === 0 && $('hearts').dataset.boss === name && $('hearts').dataset.hp === String(shown);
+    if (!same) paintHearts(name, boss.hp, shown, lost);
+    Arena.setBoss(boss, shown, boss.hp);
+  }
+  renderPips(raid, index);
+  $('raid-next').textContent = cleared ? '—' : 'x' + boss.reward;
+}
+
+function pulsePortrait() {
+  const el = $('boss-portrait');
+  el.classList.remove('struck');
+  void el.offsetWidth;
+  el.classList.add('struck');
+  const track = $('hp-track');
+  track.classList.remove('shake');
+  void track.offsetWidth;
+  track.classList.add('shake');
+}
+
 function renderRaidBar(raid, view) {
   const tier = Game.TIERS[raid.tier];
   const hero = heroById(raid.hero);
@@ -247,19 +355,10 @@ function renderRaidBar(raid, view) {
   chip.className = `tier-chip t-${tier.id}`;
   chip.textContent = raid.glory ? `${tier.name} · Glory or Wipe` : tier.name;
   $('raid-hero').innerHTML = `${hero.icon} ${esc(hero.name)}`;
-  const list = raid.bosses;
-  const cleared = view.bossIndex >= list.length;
-  const curBoss = cleared ? list[list.length - 1] : list[view.bossIndex];
-  $('boss-portrait').innerHTML = bossSvg(curBoss.name);
-  $('boss-name').textContent = cleared ? 'Raid cleared!' : curBoss.name;
-  const max = cleared ? 1 : curBoss.hp;
-  const hp = cleared ? 0 : Math.max(0, view.hp);
-  const width = `${(hp / max) * 100}%`;
-  $('hp-fill').style.width = width;
-  $('hp-lag').style.width = width;
-  $('hp-text').textContent = cleared ? 'All bosses down' : `${hp} / ${max} HP`;
+  const cleared = view.bossIndex >= raid.bosses.length;
+  showLife(raid, view.bossIndex, cleared ? 0 : view.hp, 0, heartsFresh);
+  heartsFresh = false;
   $('raid-mult').textContent = 'x' + view.mult;
-  $('raid-next').textContent = cleared ? '—' : 'x' + curBoss.reward;
   $('raid-spins').textContent = view.spinsLeft;
   $('raid-win').textContent = raid.glory ? (cleared ? 'MAX' : '—') : money(view.win);
   const charge = hero.charge;
@@ -268,39 +367,248 @@ function renderRaidBar(raid, view) {
     const n = view.played % charge.every;
     $('raid-charge-val').textContent = n === charge.every - 1 ? 'READY ⚡' : `${n}/${charge.every - 1}`;
   }
-  $('boss-pips').innerHTML = list.map((b, i) => {
-    const cls = i < view.bossIndex ? 'dead' : i === view.bossIndex ? 'current' : '';
-    const secret = i === Game.MODES[S.mode].bosses.length ? ' secret' : '';
-    return `<span class="pip ${cls}${secret}">${bossSvg(b.name)} ${esc(b.name)} · ${b.hp} HP · x${b.reward}</span>`;
-  }).join('');
-  Arena.setBoss(cleared ? null : curBoss, hp, max);
 }
 
-function showHits(step) {
-  if (skipping() || !sp().pop) return;
-  Arena.onStepHits(step);
-  step.hits.forEach((h) => {
-    const cell = cells[h.cell[0]][h.cell[1]];
-    cell.classList.remove('hit', 'crit');
-    void cell.offsetWidth;
-    cell.classList.add('hit');
-    if (h.crit || step.charged || h.marked) cell.classList.add('crit');
-    const pop = document.createElement('span');
-    pop.className = 'dmg-pop' + (h.crit ? ' crit' : h.marked ? ' marked' : '') + (step.charged ? ' charged' : '');
-    pop.textContent = `-${h.dmg}${h.crit ? ' CRIT' : ''}`;
-    cell.appendChild(pop);
-  });
-  if (step.damage > 0) {
-    const pop = $('hp-pop');
-    pop.textContent = `-${step.damage}`;
-    pop.classList.remove('show');
-    void pop.offsetWidth;
-    pop.classList.add('show');
-    const track = $('hp-track');
-    track.classList.remove('shake');
-    void track.offsetWidth;
-    track.classList.add('shake');
+const HIT_COLOR = { warrior: '#fb7185', rogue: '#34d399', mage: '#7dd3fc', hunter: '#fbbf24', priest: '#fde68a' };
+
+function hitLook(hero, h, charged) {
+  if (h.crit) return { color: '#fde047', pop: ' crit', label: `CRIT −${h.dmg}` };
+  if (h.marked) return { color: '#4ade80', pop: ' marked', label: `−${h.dmg}` };
+  if (charged) return { color: '#d8b4fe', pop: ' charged', label: `−${h.dmg}` };
+  return { color: HIT_COLOR[hero.id] || '#fb7185', pop: '', label: `−${h.dmg}` };
+}
+
+function killFlavor(hero, hit, charged) {
+  if (hit.crit) return 'Backstab crit.';
+  if (hit.marked) return "Hunter's Mark.";
+  if (charged) return 'Arcane Charge doubled the blow.';
+  if (hero.multBoost) return 'Arcane Surge lifts the multiplier.';
+  if (hero.killSpins) return 'Blessing adds a spin.';
+  return '';
+}
+
+function scriptHits(bosses, bossIndex, hp, hits) {
+  const script = [];
+  for (const h of hits) {
+    const beforeBoss = bossIndex;
+    const beforeHp = hp;
+    const applied = Game.applyDamage(bosses, bossIndex, hp, h.dmg);
+    script.push({
+      h,
+      beforeBoss,
+      beforeHp,
+      hpAfter: applied.hp,
+      bossAfter: applied.bossIndex,
+      kills: applied.kills,
+      absorbed: beforeBoss >= bosses.length ? 0 : Math.min(beforeHp, h.dmg),
+    });
+    bossIndex = applied.bossIndex;
+    hp = applied.hp;
   }
+  return script;
+}
+
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function strikeTarget() {
+  const portrait = centerOf($('boss-portrait'));
+  const hearts = $('hearts').getBoundingClientRect();
+  const heartPt = hearts.width
+    ? { x: hearts.left + Math.min(hearts.width / 2, 72), y: hearts.top + hearts.height / 2 }
+    : portrait;
+  const boss = Arena.bossPoint && Arena.bossPoint();
+  const visible = (p) => p && p.y > 48 && p.y < window.innerHeight - 48 && p.x > 0 && p.x < window.innerWidth;
+  const board = $('board').getBoundingClientRect();
+  const reelsInView = board.top < window.innerHeight * 0.92 && board.bottom > window.innerHeight * 0.2;
+  // Land on the hearts beside the reels. The stage boss still flinches.
+  // If the reels are off screen, hit the boss the player is looking at.
+  if (reelsInView && visible(heartPt)) return heartPt;
+  if (visible(boss)) return boss;
+  if (visible(portrait)) return portrait;
+  return heartPt;
+}
+
+function sizeHitLayer() {
+  const svg = $('hit-layer');
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', String(w));
+  svg.setAttribute('height', String(h));
+  return svg;
+}
+
+function launchBeam(from, to, look, ms) {
+  const svg = sizeHitLayer();
+  const ns = 'http://www.w3.org/2000/svg';
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const cx = (from.x + to.x) / 2 + (-dy / len) * 36;
+  const cy = (from.y + to.y) / 2 + (dx / len) * 36;
+  const at = (t) => ({
+    x: (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cx + t * t * to.x,
+    y: (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cy + t * t * to.y,
+  });
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', look.color);
+  path.setAttribute('stroke-width', '3.5');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('filter', 'url(#beam-glow)');
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('r', '5');
+  dot.setAttribute('fill', '#fff');
+  dot.setAttribute('stroke', look.color);
+  dot.setAttribute('stroke-width', '2');
+  const text = document.createElementNS(ns, 'text');
+  text.textContent = look.label;
+  text.setAttribute('fill', look.color);
+  text.setAttribute('font-size', '15');
+  text.setAttribute('font-weight', '800');
+  text.setAttribute('font-family', 'Georgia, serif');
+  text.setAttribute('stroke', '#14080c');
+  text.setAttribute('stroke-width', '3');
+  text.setAttribute('paint-order', 'stroke');
+  text.setAttribute('text-anchor', 'middle');
+  svg.append(path, dot, text);
+  const start = performance.now();
+  return new Promise((resolve) => {
+    const frame = (now) => {
+      if (skipping()) { path.remove(); dot.remove(); text.remove(); resolve(); return; }
+      const t = Math.min(1, (now - start) / ms);
+      const head = at(t);
+      const tail = at(Math.max(0, t - 0.22));
+      path.setAttribute('d', `M ${tail.x} ${tail.y} L ${head.x} ${head.y}`);
+      dot.setAttribute('cx', head.x);
+      dot.setAttribute('cy', head.y);
+      text.setAttribute('x', head.x);
+      text.setAttribute('y', head.y - 12);
+      if (t < 1) requestAnimationFrame(frame);
+      else { path.remove(); dot.remove(); text.remove(); resolve(); }
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
+async function openChest(raid, boss, ev, kill, hit, hero, charged) {
+  if (skipping() || !sp().chest) return false;
+  const lines = [
+    { cls: 'loot-mult', html: `Multiplier <b>x${ev.mult}</b>` },
+    { cls: 'loot-spins', html: `<b>+${ev.spins}</b> spin${ev.spins === 1 ? '' : 's'}` },
+  ];
+  const flavor = killFlavor(hero, hit, charged);
+  if (flavor) lines.push({ cls: 'loot-flavor', html: esc(flavor) });
+  const next = raid.bosses[kill.boss + 1];
+  if (kill.overflow > 0 && next) {
+    const verb = kill.overflow >= next.hp ? 'spills through' : 'carries into';
+    lines.push({ cls: 'loot-spill', html: `<b>${kill.overflow}</b> damage ${verb} ${esc(next.name)}` });
+  }
+  if (raid.glory) lines.push({ cls: 'loot-glory', html: 'Glory or Wipe — the chest pays only if every boss falls.' });
+  $('chest-portrait').innerHTML = bossSvg(boss.name);
+  $('chest-title').textContent = `${boss.name} falls`;
+  $('raid-mult').textContent = 'x' + ev.mult;
+  $('chest-loot').innerHTML = lines.map((l) => `<li class="${l.cls}">${l.html}</li>`).join('');
+  const el = $('chest');
+  el.classList.remove('hidden');
+  void el.offsetWidth;
+  el.classList.add('show');
+  Arena.onBossKilled(boss.name);
+  SFX.loot();
+  await wait(sp().chest);
+  el.classList.remove('show');
+  el.classList.add('hidden');
+  return true;
+}
+
+async function playStrike(step, raid, view) {
+  if (!step.hits.length || skipping() || !sp().beam) return 0;
+  const hero = heroById(raid.hero);
+  const script = scriptHits(raid.bosses, view.bossIndex, view.hp, step.hits);
+  const chains = [];
+  let cur = [];
+  for (const item of script) {
+    cur.push(item);
+    if (item.kills.length) { chains.push(cur); cur = []; }
+  }
+  if (cur.length) chains.push(cur);
+  const killEvents = step.events.filter((e) => e.type === 'bossKilled');
+  let shown = 0;
+  let landed = 0;
+  let total = 0;
+  let crits = 0;
+  const gap = Math.max(40, sp().beamGap - Math.max(0, step.hits.length - 5) * 10);
+  let finished = true;
+
+  for (const chain of chains) {
+    if (skipping()) { finished = false; break; }
+    const flights = chain.map((item, i) => (async () => {
+      await sleep(i * gap);
+      if (skipping()) return;
+      const look = hitLook(hero, item.h, step.charged);
+      const cell = cells[item.h.cell[0]][item.h.cell[1]];
+      cell.classList.remove('hit', 'crit');
+      void cell.offsetWidth;
+      cell.classList.add('hit');
+      if (look.pop) cell.classList.add('crit');
+      const pop = document.createElement('span');
+      pop.className = 'dmg-pop' + look.pop;
+      pop.textContent = look.label;
+      cell.appendChild(pop);
+      await launchBeam(centerOf(cell), strikeTarget(), look, sp().beam);
+    })());
+    for (let i = 0; i < chain.length; i++) {
+      await flights[i];
+      if (skipping()) { finished = false; break; }
+      const item = chain[i];
+      landed++;
+      total += item.h.dmg;
+      if (item.h.crit) crits++;
+      setTally(`${landed} hit${landed > 1 ? 's' : ''} · −${total}${crits ? ` · ${crits} crit${crits > 1 ? 's' : ''}` : ''}`, crits > 0);
+      Arena.onHitLand(item.h, hitLook(hero, item.h, step.charged).color);
+      pulsePortrait();
+      $('hearts').classList.remove('hit');
+      void $('hearts').offsetWidth;
+      $('hearts').classList.add('hit');
+      if (!item.kills.length) {
+        if (item.beforeBoss < raid.bosses.length) showLife(raid, item.beforeBoss, item.hpAfter, item.absorbed);
+        continue;
+      }
+      showLife(raid, item.kills[0].boss, 0, item.absorbed);
+      await wait(speed === 'turbo' ? 90 : 160);
+      for (let k = 0; k < item.kills.length; k++) {
+        if (skipping()) { finished = false; break; }
+        const kill = item.kills[k];
+        const ev = killEvents[shown] || { mult: raid.bosses[kill.boss].reward, spins: 0, boss: kill.boss };
+        const opened = await openChest(raid, raid.bosses[kill.boss], ev, kill, item.h, hero, step.charged);
+        if (!opened) { finished = false; break; }
+        shown++;
+        const next = kill.boss + 1;
+        if (next >= raid.bosses.length) showLife(raid, next, 0, 0);
+        else if (item.kills[k + 1]) {
+          Arena.enterRaid(raid.bosses[next]);
+          Arena.setBoss(raid.bosses[next], 0, raid.bosses[next].hp);
+          showLife(raid, next, 0, raid.bosses[next].hp);
+        }         else {
+          const nextBoss = raid.bosses[next];
+          Arena.enterRaid(nextBoss);
+          if (kill.overflow > 0) {
+            showLife(raid, next, nextBoss.hp, 0);
+            await wait(speed === 'turbo' ? 70 : 120);
+            showLife(raid, next, item.hpAfter, kill.overflow);
+            Arena.onHitLand({ dmg: kill.overflow, crit: false }, '#fecdd3');
+          } else showLife(raid, next, item.hpAfter, 0);
+        }
+      }
+      if (!finished) break;
+    }
+    if (!finished) break;
+  }
+  heartsFresh = finished;
+  return shown;
 }
 
 function raidRecap(raid, modeId) {
@@ -358,7 +666,7 @@ async function playRaid(round) {
       step.wins.forEach((w) => markCells(w.cells, 'win'));
     }
     if (step.charged && step.hits.length) setText('⚡ Arcane Charge: double damage!');
-    showHits(step);
+    const chestsShown = await playStrike(step, raid, view);
     view.played++;
     view.bossIndex = step.bossIndex;
     view.hp = step.hp;
@@ -375,9 +683,11 @@ async function playRaid(round) {
         Arena.onWin(step.winX * bet, step.winX);
       }
     }
-    if (step.damage > 0 || step.hits.length) await wait(sp().pop);
+    if (!sp().beam && (step.damage > 0 || step.hits.length)) await wait(sp().pop);
+    let chestsLeft = chestsShown;
     for (const ev of step.events) {
       if (ev.type === 'bossKilled') {
+        if (chestsLeft > 0) { chestsLeft--; continue; }
         Arena.onBossKilled(raid.bosses[ev.boss].name, ev.mult);
         await banner(`${bossSvg(raid.bosses[ev.boss].name)} ${esc(raid.bosses[ev.boss].name)} defeated!<small>Multiplier x${ev.mult} · +${ev.spins} spins</small>`, sp().banner);
       } else if (ev.type === 'retrigger') {
@@ -967,7 +1277,7 @@ function renderPaytable() {
     <p class="hint">3 / 4 / 5 Boss Gates start Normal / Super / Hidden. A full gear set starts Normal (or raises a scatter bonus one tier). Ascension when any bonus starts: ${Game.ASCEND_CHANCE.map((c, i) => `${Game.TIERS[i].name.replace(' Bonus', '')}→${Game.TIERS[i + 1].name.replace(' Bonus', '')} ${pct(c, 1)}`).join(', ')}.</p>
     <h3>Raid bosses (HP by tier)</h3>
     <table><tr><th>Boss</th>${tierHead}<th>Kill</th></tr>${hpRows}</table>
-    <p class="hint">Each wild hit deals 1 damage. A kill sets the multiplier shown (the Mage's is 1.5x) and adds ${m.bossKillSpins} spin${m.bossKillSpins > 1 ? 's' : ''}. 2+ Boss Gates in a raid add ${m.retrigger}.</p>
+    <p class="hint">Each wild sends its damage into the boss (1, or more with a class). The killing blow opens a chest with the new multiplier and extra spins; leftover damage carries into the next boss. A kill adds ${m.bossKillSpins} spin${m.bossKillSpins > 1 ? 's' : ''} (the Mage's multiplier is 1.5x). 2+ Boss Gates in a raid add ${m.retrigger}.</p>
     <h3>Classes</h3>
     ${classInfo}
     <p class="hint">Pick a class before each raid. Raid pays are balanced per class, so every class has the same average win at each tier. They differ in how the raid plays and how often it clears:</p>

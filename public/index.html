@@ -60,7 +60,11 @@
             <button id="skip-bonus" class="small-btn" type="button">Skip bonus ⏭</button>
           </span>
         </div>
-        <div id="hp-track" class="hp-track"><div id="hp-lag" class="hp-lag"></div><div id="hp-fill" class="hp-fill"></div><span id="hp-text" class="hp-text"></span><span id="hp-pop" class="hp-pop"></span></div>
+        <div class="hp-row">
+          <div id="hearts" class="hearts" aria-hidden="true"></div>
+          <div id="hit-tally" class="hit-tally"></div>
+        </div>
+        <div id="hp-track" class="hp-track"><div id="hp-lag" class="hp-lag"></div><div id="hp-fill" class="hp-fill"></div><span id="hp-text" class="hp-text"></span></div>
         <div id="boss-pips" class="boss-pips"></div>
       </section>
 
@@ -235,6 +239,34 @@
         <button id="skip-cancel" type="button">Keep watching</button>
         <button id="skip-confirm" class="play-btn" type="button">Skip</button>
       </div>
+    </div>
+  </div>
+
+  <svg id="hit-layer" class="hit-layer" aria-hidden="true">
+    <defs>
+      <filter id="beam-glow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="2.2" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
+
+  <div id="chest" class="chest hidden" role="dialog" aria-labelledby="chest-title">
+    <div class="chest-card">
+      <svg class="chest-art" viewBox="0 0 160 130" aria-hidden="true">
+        <g class="lid">
+          <path d="M24 62 Q24 16 80 16 Q136 16 136 62 L124 70 L36 70 Z" fill="#8a4b16" stroke="#fde68a" stroke-width="3"/>
+          <path d="M46 42 H114" stroke="#fde68a" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="80" cy="46" r="5" fill="#fde68a"/>
+        </g>
+        <path d="M18 64 H142 L132 118 H28 Z" fill="#5c320c" stroke="#fde68a" stroke-width="3"/>
+        <path d="M18 64 H142 L136 78 H24 Z" fill="#7a4012"/>
+        <rect x="68" y="78" width="24" height="18" rx="3" fill="#fde68a" stroke="#78350f" stroke-width="2"/>
+        <circle cx="80" cy="88" r="2.4" fill="#5c320c"/>
+      </svg>
+      <div id="chest-portrait" class="chest-portrait"></div>
+      <h2 id="chest-title"></h2>
+      <ul id="chest-loot" class="chest-loot"></ul>
     </div>
   </div>
 

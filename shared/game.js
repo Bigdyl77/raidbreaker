@@ -356,6 +356,21 @@
 
   const heroScaleFor = (mode, tier, heroId) => (mode.heroScale ? mode.heroScale[heroId][tier] : 1);
 
+  // One place for raid damage, so a hit-by-hit replay ends on the same boss and HP
+  // as applying the whole spin at once. `overflow` is the damage past the kill.
+  function applyDamage(bosses, bossIndex, hp, damage) {
+    const kills = [];
+    if (!(bossIndex < bosses.length) || damage <= 0) return { bossIndex, hp, kills };
+    hp -= damage;
+    while (bossIndex < bosses.length && hp <= 0) {
+      kills.push({ boss: bossIndex, overflow: hp < 0 ? -hp : 0 });
+      bossIndex++;
+      if (bossIndex < bosses.length) hp += bosses[bossIndex].hp;
+      else hp = 0;
+    }
+    return { bossIndex, hp, kills };
+  }
+
   function runRaid(rng, mode, tier, startX, glory = false, heroId = DEFAULT_HERO) {
     const hero = getHero(heroId);
     const cfg = mode.tiers[tier];
@@ -413,17 +428,14 @@
       }
       if (stickyFor) newWilds.forEach(([r, row]) => sticky.set(r * ROWS + row, stickyFor));
 
-      if (bossIndex < list.length && damage > 0) {
-        hp -= damage;
-        while (bossIndex < list.length && hp <= 0) {
-          mult = list[bossIndex].reward;
-          spinsLeft += killSpins;
-          events.push({ type: 'bossKilled', boss: bossIndex, mult, spins: killSpins });
-          bossIndex++;
-          if (bossIndex < list.length) hp += list[bossIndex].hp;
-          else hp = 0;
-        }
+      const applied = applyDamage(list, bossIndex, hp, damage);
+      for (const k of applied.kills) {
+        mult = list[k.boss].reward;
+        spinsLeft += killSpins;
+        events.push({ type: 'bossKilled', boss: k.boss, mult, spins: killSpins });
       }
+      bossIndex = applied.bossIndex;
+      hp = applied.hp;
 
       if (hero.rez && !rezUsed && spinsLeft === 0 && bossIndex < list.length && hp <= list[bossIndex].hp * hero.rez.threshold) {
         rezUsed = true;
@@ -602,7 +614,7 @@
   return {
     REELS, ROWS, BUY_RTP, SYMBOLS, TIERS, TOP_TIER, ASCEND_CHANCE, MYSTERY_WEIGHTS, GLORY_WEIGHTS, BUYS,
     GEAR, GEAR_FULL, CACHES, MODES, DEFAULT_MODE, HEROES, DEFAULT_HERO,
-    getMode, getHero, heroScaleFor, lootChance, payFor, minLength, gearCount, gambleChance, canGamble, buyPrice, raidBosses,
+    getMode, getHero, heroScaleFor, lootChance, payFor, minLength, gearCount, gambleChance, canGamble, buyPrice, raidBosses, applyDamage,
     startSpin, startBuy, gamble, finishRound, playRound, runRaid, evaluate,
   };
 });
