@@ -81,10 +81,26 @@ for (const [modeId, mode] of Object.entries(Game.MODES)) {
       const rng = Fair.streams('raid-a', 'raid-b', tier)('raid');
       const raid = Game.runRaid(rng, mode, tier, 0, false, hero);
       const sticky = mode.tiers[tier].sticky || 0;
+      let bossIndex = mode.tiers[tier].startBoss;
+      let hp = raid.bosses[bossIndex].hp;
       raid.steps.forEach((st) => {
         st.stickyCells.forEach(([r, row]) => assert.strictEqual(st.grid[r][row], 'W', 'sticky cells hold wilds'));
         if (!sticky) assert.strictEqual(st.stickyCells.length, 0, 'no sticky wilds in tiers without them');
         assert.strictEqual(st.hits.length, st.stickyCells.length + st.wildCells.length, 'every wild hits');
+        const kills = [];
+        for (const h of st.hits) {
+          const applied = Game.applyDamage(raid.bosses, bossIndex, hp, h.dmg);
+          kills.push(...applied.kills);
+          bossIndex = applied.bossIndex;
+          hp = applied.hp;
+        }
+        assert.strictEqual(bossIndex, st.bossIndex, 'hit-by-hit walk stays on the step boss');
+        assert.strictEqual(hp, st.hp, 'hit-by-hit walk matches step HP');
+        assert.deepStrictEqual(
+          st.events.filter((e) => e.type === 'bossKilled').map((e) => e.boss),
+          kills.map((k) => k.boss),
+          'kills follow the hits',
+        );
       });
     }
   }

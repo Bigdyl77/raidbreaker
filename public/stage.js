@@ -929,15 +929,28 @@
         st.fx = null;
         if (boss) st.boss = { name: boss.name, hp: boss.hp, maxHp: boss.hp, reward: boss.reward, hitTimer: 0 };
       },
-      onStepHits(step) {
-        if (!step.hits.length) return;
+      bossPoint() {
+        if (artStyle === 'compact') return null;
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const L = layout();
+        return {
+          x: rect.left + (L.bossX / L.w) * rect.width,
+          y: rect.top + ((L.bossY - 170) / L.h) * rect.height,
+        };
+      },
+      onHitLand(hit, color) {
         const id = heroId();
-        sfx.attack(id);
-        step.hits.forEach((h, i) => {
-          const tag = h.crit ? `CRIT ${h.dmg}` : h.marked ? `MARK ${h.dmg}` : String(h.dmg);
-          const color = h.crit ? '#fde047' : h.marked ? '#4ade80' : step.charged ? '#d8b4fe' : META[id].color;
-          shot(i === step.hits.length - 1 ? tag : '', color, true);
-        });
+        st.pose = 'attack';
+        st.poseTimer = 16;
+        st.lunge = Math.max(st.lunge, id === 'rogue' ? 46 : 24);
+        if (st.boss) st.boss.hitTimer = hit.crit ? 16 : 11;
+        st.shake = Math.max(st.shake, hit.crit ? 11 : 6);
+        const L = layout();
+        const c = color || (hit.crit ? '#fde047' : META[id].color);
+        burst(L.bossX, L.bossY - 160, c, hit.crit ? 20 : 11, hit.crit ? 4.2 : 3);
+        if (artStyle !== 'compact') addCallout(L.bossX, L.bossY - 214, hit.crit ? `CRIT ${hit.dmg}` : `−${hit.dmg}`, c, hit.crit ? 1.2 : 1);
+        sfx.bossHit();
       },
       onBossKilled(name) {
         sfx.bossKill();
